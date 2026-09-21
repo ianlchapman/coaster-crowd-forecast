@@ -2,6 +2,8 @@
 
 Forecast how busy a theme park will be on a given day, from its calendar, school and public holidays, weather and its own recent history.
 
+Built with Claude Code as a pair programmer; see [section 15 of the tutorial](TUTORIAL.md#15-working-with-claude-code) for how the work was split.
+
 The target is `crowd_percent`: a per-park, rank-normalised 0-100 index of daily crowd level (50 = a typical day for that park, 90 = busier than 90% of its days). Models are LightGBM, one set of trees serving every forecast horizon, with an explicit "low confidence" path for parks that have too little history.
 
 > The crowd data is scraped from queue-times.com by a separate loader and is **not included or redistributable**. Everything runs on a synthetic dataset without it (`crowdcast demo`, the test suite and CI), and the real-data pipeline is documented in [`docs/DATA.md`](docs/DATA.md).

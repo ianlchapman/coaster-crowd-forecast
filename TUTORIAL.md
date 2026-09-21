@@ -14,6 +14,8 @@ The reason is easy to see once you look for it. A model built on time of year, o
 
 That gave us the question this tutorial answers: **how do we add holidays, in the places a park's visitors come from, to a crowd score that is already good?** The answer became park-specific national and school holiday scores (section 3.2), a model that stays cautious where a park has little history (section 8), and an evaluation protocol that lets us say how much better, and where it is not (sections 1 and 2).
 
+**How this was built.** I set the direction and the domain idea, and built it together with Claude Code. Section 15 describes who did what and how the checks in this tutorial came about.
+
 **Following along.** Everything runs on synthetic data with no network:
 
 ```bash
@@ -334,7 +336,17 @@ The crowd data comes from a scraped public API. Before making anything public we
 
 `LICENSE` states that the MIT licence covers code only; [NOTICE.md](NOTICE.md) lists each source's terms. Do this at the start of a project, not the end.
 
-## 15. The lessons, compressed
+## 15. Working with Claude Code
+
+This repository was built with Claude Code as a pair programmer, and the split of work is worth stating plainly.
+
+**Direction and ideas.** The starting point was mine: a trip that the crowd score missed, and the wish for a version that accounts for national and school holidays. So was the central idea of weighting those holidays by where a park's visitors come from (section 3.2). Decisions about the evaluation protocol (a held-out year, scored once) and about keeping third-party data out of the repository were made together.
+
+**Implementation.** I wrote a lot of the data-loading logic. Claude Code helped with boilerplate such as HTML parsing, and built out much of the model through an iterative cycle: propose a change, run it, read the numbers, adjust.
+
+**Checks.** Several of the safeguards in this tutorial came from Claude Code rather than from me: it caught the `COLD_C + 5` porting bug by comparing the new pipeline against the old one (section 13), and it proposed deliberately breaking the leakage tests to prove they can fail. That is the useful pattern: an assistant that writes code quickly is most valuable when it is also asked to try to disprove it.
+
+## 16. The lessons, compressed
 
 1. **Protocol first.** Chronological splits, one scored test, everything else on validation.
 2. **Baselines set the scale.** "Same weekday last year" was hard to beat and told us what to engineer.
@@ -348,7 +360,7 @@ The crowd data comes from a scraped public API. Before making anything public we
 10. **Say what a feature is for.** The history gate changes labelling, not accuracy; the docs say so.
 11. **Read the data licences before publishing.**
 
-## 16. Where to go next
+## 17. Where to go next
 
 Things this repo does not do, in the order we would tackle them:
 
