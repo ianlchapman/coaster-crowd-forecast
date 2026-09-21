@@ -1,0 +1,31 @@
+# environments / tooling
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_/cache/
+**/cache/
+.ruff_/cache/
+**/cache/
+.pytest_/cache/
+**/cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+.idea/
+.vscode/
+.DS_Store
+
+# data and model artefacts are never committed (see docs/DATA.md)
+/data/
+/models/
+*.joblib
+*.npz
+*.log
+/cache/
+**/cache/
+
+# small curated reference tables ARE committed
+!reference/
+!reference/**

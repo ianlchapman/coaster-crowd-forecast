@@ -1,0 +1,17 @@
+# Defaults for the gated LightGBM crowd model (see docs/METHODOLOGY.md).
+min_years: 1.0          # park needs >= this many years of labelled history to use the park-specific model
+wx_blank: 0.25          # share of training rows with all weather removed (so dates beyond the forecast horizon still work)
+exclude_covid: true     # drop 2020-03-01 .. 2021-12-31 from training
+seed: 0
+lightgbm:
+  n_estimators: 600
+  learning_rate: 0.03
+  num_leaves: 127
+  min_child_samples: 50
+  subsample: 0.8
+  subsample_freq: 1
+  colsample_bytree: 0.8
+  reg_lambda: 1.0
+  cat_smooth: 10
+  n_jobs: 8
+  verbose: -1

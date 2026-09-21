@@ -1,0 +1,5 @@
+park_id,latitude,longitude,note
+29,40.1848,-74.8719,Sesame Place: loader coordinates were Houston; Langhorne PA site (OSM/Nominatim)
+294,35.5849,-97.441,Hurricane Harbor OKC: loader coordinates were in Georgia (copy of White Water Atlanta); Frontier City site used
+297,42.2459,-88.9636,Hurricane Harbor Rockford: loader coordinates duplicated Great America; Cherry Valley/Rockford IL site (OSM/Nominatim)
+334,28.44144545,-81.44867409,Epic Universe: longitude sign wrong in the loader's parks.csv
