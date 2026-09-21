@@ -4,6 +4,16 @@ This is the story of how this repository was built, written for software enginee
 
 It follows the order the work actually happened. Each section says what we did, why, what the numbers said, and where to look in the code. Numbers come from the held-out year **2025-09-01 to 2026-08-31** and are reproduced by `crowdcast evaluate` and `experiments/` (see [docs/RESULTS.md](docs/RESULTS.md)) unless a section says otherwise.
 
+## Why build on an existing crowd score?
+
+This project did not start from a blank page. Crowd calendars already exist, and the one we used is genuinely impressive: it uses gradient-boosted regressors on the time of year, park opening times and weather, so it learns from years of past data, and its accuracy improves the longer a park has been on the site. For most days at most parks it is a very good guide, and we wanted to build on that work, not replace it.
+
+What started this repository was a trip. We visited a park during the French school holidays, and the crowd score was well out: the park was packed. It was not a marginal miss.
+
+The reason is easy to see once you look for it. A model built on time of year, opening hours and weather has no way to know that French schools are on holiday. The date looks like any other date, the hours are normal, the weather is fine, and school holidays in France (like those in other countries) do not fall on the same dates every year, so "last year around now" can be off by a week or more. The park was full because of who was free to visit, and nothing in the inputs described that.
+
+That gave us the question this tutorial answers: **how do we add holidays, in the places a park's visitors come from, to a crowd score that is already good?** The answer became park-specific national and school holiday scores (section 3.2), a model that stays cautious where a park has little history (section 8), and an evaluation protocol that lets us say how much better, and where it is not (sections 1 and 2).
+
 **Following along.** Everything runs on synthetic data with no network:
 
 ```bash
