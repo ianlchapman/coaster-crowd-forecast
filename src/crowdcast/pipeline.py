@@ -55,11 +55,14 @@ def forecast(paths: Paths, model: GatedCrowdModel, end: str | None = None, refre
 
     rows = build_future_rows(labelled, DailyScores.load(paths.daily_scores), weather, end)
     pred = model.predict(rows, lag=1)  # lag=1 keeps every drift column; those without labels are already blank
-    return pred.assign(
+    pred = pred.assign(
         days_ahead=rows["days_ahead"].to_numpy(),
         weather=rows["wx_source"].to_numpy(),
         open_last_year=rows["open_last_year"].to_numpy(),
     )
+    names = load_parks(paths.parks_csv)[["id", "name"]].rename(columns={"id": "park_id", "name": "park_name"})
+    pred = pred.merge(names, on="park_id", how="left")
+    return pred[["park_id", "park_name"] + [c for c in pred.columns if c not in ("park_id", "park_name")]]
 
 
 # --------------------------------------------------------------------------------------- data-pipeline steps
