@@ -135,6 +135,49 @@ bucket that dilutes the decode. This needs per-park multiclass (variable class c
 than one global classifier, which is more plumbing than v1-v3 — flagged as the next experiment, not
 built yet.
 
+## Robustness check: is the lookup's score just an artifact of one test window?
+
+User asked whether the v1 lookup is "overfitting". It can't overfit in the classical sense (nothing is
+fit to training noise — it's a pure lookup), but the concern translates to a real one: **all prior
+numbers came from a single 90-day window**, so they could be an artifact of that window rather than a
+stable estimate. Checked two ways:
+
+**`experiments/08_lookup_stability_check.py`** — reran the v1 lookup on four different historical 90-day
+windows (0.25/1/2/3 years back). `is_open` accuracy and opens/closes exact-match were fairly stable
+(~0.05-0.06 spread), but **closed-class precision ranged from 0.476 to 0.733** — a 0.257 spread. The
+originally-reported 0.579 just happened to land mid-range; it's not a stable number. Reason: closures
+cluster in specific calendar windows (off-season months) whose exact boundaries shift year to year
+(leap years, moving holidays), so which season a 90-day test window lands in matters a lot for that one
+metric.
+
+**`experiments/09_2025_holdout_eval.py`** — a more realistic split per user request: train on everything
+through 2024-12-31 (COVID rows excluded via `ModelConfig.exclude_covid`, already the default), test on
+all of 2025. Also fixed a real apples-to-apples gap: v1's population (parks `build_future_rows` includes,
+gated on a recent `crowd_percent` label — 93 parks) doesn't match v2's (any park with status history —
+128 parks), so the raw v1-vs-v2 numbers below aren't directly comparable; a **matched comparison** on the
+33,675 (park_id, date) rows both cover is the one that counts.
+
+| | v1 lookup (matched) | v2 StatusModel (matched) |
+|---|---|---|
+| is_open accuracy | 93.3% | **95.2%** |
+| is_open closed precision/recall | 0.880 / 0.885 | **0.930 / 0.898** |
+| opens MAE / exact | 11.3min / **83.0%** | **10.6min** / 78.5% |
+| closes MAE / exact | **51.5min** / **68.3%** | 55.0min / 43.4% |
+| v3 closes (unmatched, 28,398 rows) | — | MAE 70.5min / exact 57.3% |
+
+**This confirms the earlier conclusion holds up on a full year, not just 90 days**: is_open → model wins
+clearly (bigger margin than before: +1.9pp accuracy, +5pp closed-precision); opens → toss-up (model
+better MAE, lookup better exact-match, same as the 90-day result); closes → lookup wins clearly, v3
+category classifier still doesn't beat it. One thing the year-long test *did* change: **closes MAE was
+optimistic in the 90-day window** (35.6min there vs. 51.5min over a full year) — forecasting a full year
+ahead is genuinely harder than 90 days, so the short window understated real difficulty for that metric
+specifically. `is_open` and `opens` were comparatively stable between the two test lengths.
+
+**Practical takeaway**: trust the *direction* of every conclusion above (which approach wins which
+field) — it's now checked on two different test setups and holds. Don't trust the *exact magnitude* of
+closed-class precision or closes MAE from any single window; use the full-year numbers in this section
+as the better estimate.
+
 ## Out of scope (follow-ups)
 
 - Wire `StatusModel` into `pipeline.forecast()` for `is_open` (validated win); decide on `opens`/`closes`
