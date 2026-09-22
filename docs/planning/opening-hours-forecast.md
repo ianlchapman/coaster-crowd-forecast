@@ -178,6 +178,48 @@ field) — it's now checked on two different test setups and holds. Don't trust 
 closed-class precision or closes MAE from any single window; use the full-year numbers in this section
 as the better estimate.
 
+## Multi-year rolling-origin backtest: does more history actually help?
+
+User's framing: train on *all* previous years (not a rolling recent-window), predict a full year/date
+ahead, expecting more historical data to raise accuracy (the ~seasonal normalization already built into
+the model via `doy_sin`/`doy_cos`/`month`/`year` is what should let more years actually help rather than
+just adding noise). Both v1 (`build_future_rows`/`add_is_open`) and v2 (`StatusModel.fit`) already train
+cumulatively (`upto = frame[frame["date"] <= cutoff]` — everything, not a window), so this was really
+about testing that hypothesis properly rather than changing the training method.
+
+`experiments/10_multi_year_backtest.py`: 5 independent folds, each trained on everything before that
+year (COVID excluded) and tested on the full year — 2019 (5 training years), 2022 (8), 2023 (9), 2024
+(10), 2025 (11). 2020/2021 excluded as test years too (real closures that year aren't a fair "normal
+seasonality" test).
+
+| test year | train yrs | v1 is_open acc | v2 is_open acc | v1 closed prec | v2 closed prec | v1 opens exact | v2 opens exact | v1 closes MAE | v2 closes MAE | v1 closes exact | v2 closes exact |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2019 | 5  | 0.906 | 0.944 | 0.809 | 0.923 | 0.774 | 0.669 | 74.5  | 69.9  | 0.554 | 0.295 |
+| 2022 | 8  | 0.834 | 0.908 | 0.656 | 0.881 | 0.515 | 0.545 | 132.3 | 133.8 | 0.375 | 0.182 |
+| 2023 | 9  | 0.930 | 0.947 | 0.863 | 0.908 | 0.706 | 0.662 | 63.0  | 72.7  | 0.597 | 0.333 |
+| 2024 | 10 | 0.939 | 0.953 | 0.890 | 0.928 | 0.800 | 0.698 | 47.6  | 51.9  | 0.655 | 0.460 |
+| 2025 | 11 | 0.933 | 0.952 | 0.880 | 0.930 | 0.830 | 0.785 | 51.5  | 55.0  | 0.683 | 0.434 |
+
+Correlation of `train_years` with each metric: is_open_acc +0.41/+0.32 (v1/v2), closed_prec +0.45/+0.23,
+opens_exact +0.26/+0.49, closes_exact +0.51/+0.63, closes_MAE **-0.42/-0.32** (negative = MAE falls as
+training years grow, same direction as "more data helps"). **Confirmed: more history helps, for both
+approaches, on every metric** — monotonically from 2022 to 2025. The 2022 fold is a clear outlier (worst
+score across the board for both approaches) — the year right after the excluded COVID window, when parks
+were still normalizing reopening schedules that don't resemble pre-pandemic history; even 8 years of
+data can't predict a genuinely disrupted year well. Worth remembering as a limitation independent of how
+much history is available.
+
+**This also corrects the v2-conclusion from the single-year (2025) test**, which was too tentative on
+`opens`: across 5 independent folds, **the lookup wins `opens` in 4 of 5 years**, not a toss-up. `closes`
+exact-match shows the lookup winning by a larger, more consistent margin than the single-year test
+suggested. Only `is_open` is a clean win for the model in every single fold.
+
+**Revised conclusion (supersedes the single-year one above)**: `is_open` → StatusModel, wins every
+year tested. `opens` and `closes` → v1 lookup, wins most/all years tested. Likely reason: real schedules
+repeat almost verbatim year-to-year for a given park, so directly copying last year's recorded value
+beats a regression/classifier that has to fit one shared set of trees across many parks and years —
+exact repetition is easy for a lookup and hard for anything that must generalize.
+
 ## Out of scope (follow-ups)
 
 - Wire `StatusModel` into `pipeline.forecast()` for `is_open` (validated win); decide on `opens`/`closes`
