@@ -57,11 +57,55 @@ weekday/last-year lookup doesn't fully capture. Both degrade mildly with horizon
 the closed-class precision are the weak points — worth targeting first if/when a trained classifier
 replaces this (see Out of scope below).
 
+## v2: feature-driven model (LightGBM), evaluated against the lookup
+
+Built to test whether year-on-year trend features (the same `prior_year_frame` mechanism the
+crowd_percent model already uses for `py_same_wd`/`py_wd_mean3`) beat the plain lookup, per user
+request. New files:
+
+- `src/crowdcast/features/status_build.py` — `build_status_frame`: one row per open-or-closed park-day
+  (unlike `build_feature_frame`, keeps closed days) with calendar/holiday/park features plus
+  `py_is_open_same_wd`/`py_is_open_wd_mean3` and the same for `open_min`/`close_min`. No `asof` leakage
+  guard needed — the ~364-day lookback is far longer than any realistic held-out window.
+- `src/crowdcast/models/status.py` — `StatusModel`: one `LGBMClassifier` (is_open) + two `LGBMRegressor`s
+  (open_min/close_min, trained only on actually-open rows). Single-stage, not gated by park history length
+  like `GatedCrowdModel` — untested whether new parks need that; LightGBM handles the NaN prior-year
+  features they'd get. Regressor output is rounded to the nearest 30 minutes before formatting (real
+  schedules sit on a 30-min grid — see the `opens`/`closes` value counts in the real data), which matters
+  a lot for exact-match (see below).
+- `experiments/06_opening_hours_model_eval.py` — same 90-day held-out backtest as
+  `05_opening_hours_eval.py`, for direct comparison.
+
+**Same 90-day real-data backtest, model vs. lookup heuristic:**
+
+| metric | lookup (v1) | LightGBM (v2) |
+|---|---|---|
+| is_open accuracy | 96.3% | 96.4% |
+| is_open closed-class precision/recall | 0.579 / 0.705 | **0.726 / 0.760** |
+| opens MAE / exact match | 11.3min / 89.1% | **8.2min** / 85.1% |
+| closes MAE / exact match | 35.6min / 74.1% | 39.0min / 52.9% |
+
+Mixed result, not a clean win: **is_open is clearly better** (the closed-class numbers were the lookup's
+known weak spot, and the model closes a good chunk of that gap — plausibly via `school_holiday` and
+`doy_cos`, both in its top-8 features by gain, alongside `py_is_open_same_wd`/`py_is_open_wd_mean3`
+which still dominate). **Opens is a modest win** on MAE, roughly a wash on exact match. **Closes is worse**
+on both — before rounding, closes exact match was only 2.7% (continuous regression essentially never
+lands on the discrete true value); rounding recovered it to 52.9%, still well below the lookup's 74.1%.
+Closing time has more distinct values in the real data than opening time (see value counts run during
+this eval) and the top features (`py_close_min_wd_mean3`, `py_close_min`, `park_cat`, `months_open`) are
+the same drivers, so the regression framing itself — not missing features — looks like the limitation.
+
+**Conclusion**: worth swapping `is_open` to the model; `opens` is a toss-up; keep the lookup for `closes`
+until the hours prediction is reframed as classification over each park's own observed schedule values
+rather than free regression (see follow-up below) — that's the natural next step given this result, not
+more feature engineering.
+
 ## Out of scope (follow-ups)
 
-- Trained is_open classifier (vs. lookup) — closed-class precision (0.579) is the clearest opportunity.
-- Better closing-time modeling (currently the weakest metric: 35.6min MAE vs 11.3min for opening time) —
-  likely needs event/season features the lookup doesn't use (late nights, extended-hours events).
+- Wire `StatusModel` into `pipeline.forecast()` for `is_open` (validated win); decide on `opens`/`closes`
+  once reframed as classification over each park's observed schedule values (see v2 conclusion above).
+- History-length gating for `StatusModel` like `GatedCrowdModel` has for crowd_percent — untested whether
+  brand-new parks (all-NaN prior-year features) need a simpler fallback model.
 - One-off/irregular closures (e.g. unannounced single-day closure) not tied to weekday pattern.
 - Crowd model itself doesn't yet skip/adjust prediction on predicted-closed days — the two fields
   are consumed together by the caller, not coupled internally.
