@@ -100,6 +100,41 @@ until the hours prediction is reframed as classification over each park's own ob
 rather than free regression (see follow-up below) — that's the natural next step given this result, not
 more feature engineering.
 
+## v3: closing time as a park-relative day-type classifier — did not beat v1
+
+Tried per user suggestion: classify each open day as `event` (an extend-hours-relevant event: halloween/
+christmas/summer/festival/ticketed — excludes early-entry, which affects opening not closing) else
+`short`/`normal`/`long`, the latter three defined as **terciles of that park's own** historical non-event
+close times (so "long" means a different clock time at different parks), then decode the predicted
+category back to a clock time via that park's own median close time observed in that category (falling
+back to the park's overall median + the category's average cross-park offset for park/category pairs with
+no training example). New files: `src/crowdcast/models/closing_category.py`
+(`ClosingCategoryModel`), `experiments/07_closing_category_eval.py`.
+
+**Same 90-day backtest, closes only:**
+
+| | v1 lookup | v2 regression | v3 category |
+|---|---|---|---|
+| MAE | 35.6min | 39.0min | 46.5-52.1min |
+| exact match | 74.1% | 52.9% | 62.8-63.4% |
+
+v3 beats v2 on exact match but loses to both v1 and v2 on MAE, and loses to v1 on exact match too — net,
+it didn't beat the plain lookup. Feature importance shows `has_event`/`park_cat` dominate the category
+call, and the worst-performing bucket is `short` (MAE 51-63min) — the likely reason: **tercile splits
+don't align with how real schedules actually vary**. A park's closing times are typically a handful of
+exact, often bimodal values (e.g. 18:00 most weekdays, 22:00 weekends/summer) rather than a smooth
+continuum, so a statistical tercile cut can put two genuinely distinct real values in the same "short"
+bucket, and the bucket's decode (a median) lands on neither.
+
+**Follow-up implied by this result**: don't classify into a statistical bucket that still needs
+decoding — classify directly among **each park's own observed distinct close-time values** (true
+multiclass, cardinality = however many distinct values that park has actually used), which was the
+original idea from the very first exploratory discussion on this feature and is the one variant not yet
+tried. `event`-type features are still useful there, as classifier inputs, not as a forced separate
+bucket that dilutes the decode. This needs per-park multiclass (variable class count per park) rather
+than one global classifier, which is more plumbing than v1-v3 — flagged as the next experiment, not
+built yet.
+
 ## Out of scope (follow-ups)
 
 - Wire `StatusModel` into `pipeline.forecast()` for `is_open` (validated win); decide on `opens`/`closes`

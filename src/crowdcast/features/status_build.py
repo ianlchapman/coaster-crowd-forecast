@@ -14,12 +14,16 @@ import pandas as pd
 
 from crowdcast.features.build import add_holiday_distance_logs
 from crowdcast.features.calendar import add_calendar_features
-from crowdcast.features.columns import CALENDAR, CATEGORICAL, HOLIDAY, PARK
+from crowdcast.features.columns import CALENDAR, CATEGORICAL, EVENTS, HOLIDAY, PARK
 from crowdcast.features.history import prior_year_frame
+from crowdcast.features.hours_events import add_events
 from crowdcast.scoring.daily import DailyScores
 
 STATUS_FEATURES = [*CALENDAR, *HOLIDAY, *PARK, "park_cat", "py_is_open_same_wd", "py_is_open_wd_mean3"]
 HOURS_FEATURES = [*STATUS_FEATURES, "py_open_min", "py_open_min_wd_mean3", "py_close_min", "py_close_min_wd_mean3"]
+#: adds the event-day flags (known on the day itself, not ahead of time -- see build_future_rows's
+#: "copied from date - 364" note) for the closing-category classifier, which leans on "is this an event day".
+CATEGORY_FEATURES = [*HOURS_FEATURES, *EVENTS]
 
 
 def _add_prior_year(df: pd.DataFrame, value_col: str, same_wd_col: str, wd_mean3_col: str) -> None:
@@ -53,6 +57,7 @@ def build_status_frame(raw_calendar: pd.DataFrame, parks: pd.DataFrame, scores: 
     _add_prior_year(df, "is_open", "py_is_open_same_wd", "py_is_open_wd_mean3")
     _add_prior_year(df, "open_min", "py_open_min", "py_open_min_wd_mean3")
     _add_prior_year(df, "close_min", "py_close_min", "py_close_min_wd_mean3")
+    add_events(df)
 
     for col in CATEGORICAL:
         df[col] = df[col].astype("category")
