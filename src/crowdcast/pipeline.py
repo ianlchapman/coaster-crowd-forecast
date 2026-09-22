@@ -10,6 +10,7 @@ from crowdcast.config import Paths
 from crowdcast.data.loaders import load_crowd_calendar, load_parks
 from crowdcast.features.build import build_feature_frame, park_table
 from crowdcast.features.future import build_future_rows
+from crowdcast.features.status import add_is_open, minutes_to_hhmm
 from crowdcast.models.gated import GatedCrowdModel
 from crowdcast.scoring.daily import DailyScores
 from crowdcast.scoring.enhance import enhance_calendar
@@ -54,15 +55,22 @@ def forecast(paths: Paths, model: GatedCrowdModel, end: str | None = None, refre
     weather = features.merge(combined[["park_id", "date", "wx_source"]], on=["park_id", "date"], how="left")
 
     rows = build_future_rows(labelled, DailyScores.load(paths.daily_scores), weather, end)
+    status_calendar = load_crowd_calendar(paths.crowd_calendar)[["park_id", "date", "status"]]
+    rows = add_is_open(rows, status_calendar, labelled["date"].max())
+
     pred = model.predict(rows, lag=1)  # lag=1 keeps every drift column; those without labels are already blank
     pred = pred.assign(
+        is_open=rows["is_open"].to_numpy(),
+        opens=minutes_to_hhmm(rows["open_min"]).where(rows["is_open"]).to_numpy(),
+        closes=minutes_to_hhmm(rows["close_min"]).where(rows["is_open"]).to_numpy(),
         days_ahead=rows["days_ahead"].to_numpy(),
         weather=rows["wx_source"].to_numpy(),
         open_last_year=rows["open_last_year"].to_numpy(),
     )
     names = load_parks(paths.parks_csv)[["id", "name"]].rename(columns={"id": "park_id", "name": "park_name"})
     pred = pred.merge(names, on="park_id", how="left")
-    return pred[["park_id", "park_name"] + [c for c in pred.columns if c not in ("park_id", "park_name")]]
+    front = ["park_id", "park_name", "date", "is_open", "opens", "closes"]
+    return pred[front + [c for c in pred.columns if c not in front]]
 
 
 # --------------------------------------------------------------------------------------- data-pipeline steps
