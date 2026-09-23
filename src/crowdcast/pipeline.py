@@ -10,7 +10,9 @@ from crowdcast.config import Paths
 from crowdcast.data.loaders import load_crowd_calendar, load_parks
 from crowdcast.features.build import build_feature_frame, park_table
 from crowdcast.features.future import build_future_rows
+from crowdcast.features.status import add_is_open_prior_year, minutes_to_hhmm
 from crowdcast.models.gated import GatedCrowdModel
+from crowdcast.models.status import StatusModel
 from crowdcast.scoring.daily import DailyScores
 from crowdcast.scoring.enhance import enhance_calendar
 from crowdcast.weather.archive import load_archive
@@ -39,8 +41,19 @@ def load_training_frame(paths: Paths) -> pd.DataFrame:
     return build_feature_frame(enhanced, load_parks_table(paths), weather)
 
 
-def forecast(paths: Paths, model: GatedCrowdModel, end: str | None = None, refresh: bool = False) -> pd.DataFrame:
-    """Predict every active park from the day after the last label to ``end`` (default: today + 15, the weather forecast horizon)."""
+def forecast(
+    paths: Paths,
+    model: GatedCrowdModel,
+    status_model: StatusModel,
+    end: str | None = None,
+    refresh: bool = False,
+) -> pd.DataFrame:
+    """Predict every active park from the day after the last label to ``end`` (default: today + 15, the weather forecast horizon).
+
+    ``is_open`` comes from ``status_model`` (wins every backtest year, see docs/planning/opening-hours-
+    forecast.md); ``opens``/``closes`` still come from the same-weekday-last-year lookup, which wins those
+    fields in most/all backtest years -- a blend of the two approaches, not a full replacement.
+    """
     labelled = load_training_frame(paths)
     end = end or str((pd.Timestamp.today().normalize() + pd.Timedelta(days=15)).date())
     active = labelled.loc[labelled["date"] > labelled["date"].max() - pd.Timedelta(days=60), "park_id"].unique()
@@ -54,15 +67,23 @@ def forecast(paths: Paths, model: GatedCrowdModel, end: str | None = None, refre
     weather = features.merge(combined[["park_id", "date", "wx_source"]], on=["park_id", "date"], how="left")
 
     rows = build_future_rows(labelled, DailyScores.load(paths.daily_scores), weather, end)
+    status_calendar = load_crowd_calendar(paths.crowd_calendar)[["park_id", "date", "status"]]
+    rows = add_is_open_prior_year(rows, status_calendar, labelled["date"].max())
+    is_open = pd.Series(status_model.predict_is_open(rows), index=rows.index)
+
     pred = model.predict(rows, lag=1)  # lag=1 keeps every drift column; those without labels are already blank
     pred = pred.assign(
+        is_open=is_open.to_numpy(),
+        opens=minutes_to_hhmm(rows["open_min"]).where(is_open).to_numpy(),
+        closes=minutes_to_hhmm(rows["close_min"]).where(is_open).to_numpy(),
         days_ahead=rows["days_ahead"].to_numpy(),
         weather=rows["wx_source"].to_numpy(),
         open_last_year=rows["open_last_year"].to_numpy(),
     )
     names = load_parks(paths.parks_csv)[["id", "name"]].rename(columns={"id": "park_id", "name": "park_name"})
     pred = pred.merge(names, on="park_id", how="left")
-    return pred[["park_id", "park_name"] + [c for c in pred.columns if c not in ("park_id", "park_name")]]
+    front = ["park_id", "park_name", "date", "is_open", "opens", "closes"]
+    return pred[front + [c for c in pred.columns if c not in front]]
 
 
 # --------------------------------------------------------------------------------------- data-pipeline steps

@@ -66,7 +66,7 @@ python scripts/calendars/50_build_school_verified.py
 crowdcast calendars-merge
 crowdcast holidays-fit && crowdcast holidays-score && crowdcast enhance
 crowdcast weather-fetch
-crowdcast train && crowdcast evaluate
+crowdcast train && crowdcast train-status && crowdcast evaluate
 ```
 
 The calendar scripts are hand-curated data builders ported from the research phase. They are formatted but exempt from the strict lint rules on purpose (see `pyproject.toml`); their outputs were checked to be identical to the originals.
