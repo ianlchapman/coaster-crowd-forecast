@@ -77,7 +77,8 @@ crowdcast holidays-fit         # per-park region weights (~1 min on 6 cores)
 crowdcast holidays-score       # daily park scores
 crowdcast enhance              # crowd calendar + holiday columns
 crowdcast weather-fetch        # historical weather per park (Open-Meteo, resumable)
-crowdcast train                # fit and save the model
+crowdcast train                # fit and save the crowd_percent model
+crowdcast train-status         # fit and save the is_open/opens/closes model
 crowdcast evaluate             # back-test with the horizon / gate breakdown
 crowdcast forecast OUT.csv     # predict the days after the last label, using forecast weather
 ```
