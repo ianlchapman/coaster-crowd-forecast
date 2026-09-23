@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from crowdcast.features.history import prior_year_frame
+
 LAST_YEAR = pd.Timedelta(days=364)
 HISTORY_DAYS = 84
 
@@ -35,6 +37,18 @@ def add_is_open(rows: pd.DataFrame, status_calendar: pd.DataFrame, last: pd.Time
         .fillna(1.0)  # no history at all (brand-new park): assume open
     )
     rows["is_open"] = prob.to_numpy() >= 0.5
+    return rows
+
+
+def add_is_open_prior_year(rows: pd.DataFrame, status_calendar: pd.DataFrame, last: pd.Timestamp) -> pd.DataFrame:
+    """``py_is_open_same_wd``/``py_is_open_wd_mean3`` for future rows, computed the same way
+    :func:`crowdcast.features.status_build.build_status_frame` computes them for training -- needed to
+    feed :class:`crowdcast.models.status.StatusModel` at prediction time."""
+    cal = status_calendar.loc[status_calendar["date"] <= last]
+    labels = cal.set_index(["park_id", "date"])["status"].eq("open").astype(float)
+    py = prior_year_frame(labels, rows["park_id"], rows["date"])
+    rows["py_is_open_same_wd"] = py["py_same_wd"].to_numpy()
+    rows["py_is_open_wd_mean3"] = py["py_wd_mean3"].to_numpy()
     return rows
 
 

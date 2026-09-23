@@ -55,6 +55,24 @@ def _cmd_train(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_train_status(args: argparse.Namespace) -> int:
+    from crowdcast.data.loaders import load_crowd_calendar, load_parks
+    from crowdcast.features.build import park_table
+    from crowdcast.features.status_build import build_status_frame
+    from crowdcast.models.status import StatusModel
+    from crowdcast.scoring.daily import DailyScores
+
+    paths = Paths()
+    raw = load_crowd_calendar(paths.crowd_calendar)
+    parks = park_table(load_parks(paths.parks_csv), pd.read_csv(paths.parks_enriched))
+    frame = build_status_frame(raw, parks, DailyScores.load(paths.daily_scores))
+    cutoff = args.cutoff or str(frame["date"].max().date())
+    model = StatusModel(ModelConfig.from_yaml(args.config) if args.config else ModelConfig()).fit(frame, cutoff)
+    model.save(paths.status_model_file)
+    print(f"saved {paths.status_model_file}: trained to {cutoff}")
+    return 0
+
+
 def _cmd_evaluate(args: argparse.Namespace) -> int:
     from crowdcast.evaluation.backtest import run_backtest
     from crowdcast.pipeline import load_training_frame
@@ -88,10 +106,17 @@ def _cmd_predict(args: argparse.Namespace) -> int:
 
 def _cmd_forecast(args: argparse.Namespace) -> int:
     from crowdcast.models.gated import GatedCrowdModel
+    from crowdcast.models.status import StatusModel
     from crowdcast.pipeline import forecast
 
     paths = Paths()
-    pred = forecast(paths, GatedCrowdModel.load(paths.model_file), end=args.to, refresh=args.refresh)
+    pred = forecast(
+        paths,
+        GatedCrowdModel.load(paths.model_file),
+        StatusModel.load(paths.status_model_file),
+        end=args.to,
+        refresh=args.refresh,
+    )
     pred.to_csv(args.out, index=False)
     print(
         f"wrote {args.out}: {len(pred):,} rows, {pred['park_id'].nunique()} parks, {pred['date'].min().date()}..{pred['date'].max().date()}"
@@ -171,6 +196,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--cutoff", help="last training date (default: last labelled day)")
     s.add_argument("--config", type=Path, help="YAML model config (default configs/model.yaml values)")
     s.set_defaults(func=_cmd_train)
+
+    s = sub.add_parser(
+        "train-status", help="fit the is_open/opens/closes model on all status history up to --cutoff and save it"
+    )
+    s.add_argument("--cutoff", help="last training date (default: last status day)")
+    s.add_argument("--config", type=Path, help="YAML model config (default configs/model.yaml values)")
+    s.set_defaults(func=_cmd_train_status)
 
     s = sub.add_parser("evaluate", help="back-test: fit to --cutoff, score the following window")
     s.add_argument("--cutoff")

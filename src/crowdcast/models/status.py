@@ -43,6 +43,13 @@ class StatusModel:
             raise RuntimeError("model is not fitted")
         return self.is_open, self.opens, self.closes
 
+    def predict_is_open(self, frame: pd.DataFrame) -> np.ndarray:
+        """Just the is_open classifier -- the field it beats the lookup heuristic on in every backtest
+        year (see docs/planning/opening-hours-forecast.md); ``opens``/``closes`` still come from the
+        lookup in ``pipeline.forecast()``, which wins those fields."""
+        is_open_clf, _, _ = self._check_fitted()
+        return is_open_clf.predict(frame[STATUS_FEATURES]).astype(bool)
+
     def predict(self, frame: pd.DataFrame) -> pd.DataFrame:
         is_open_clf, opens_reg, closes_reg = self._check_fitted()
         is_open = is_open_clf.predict(frame[STATUS_FEATURES]).astype(bool)

@@ -62,6 +62,7 @@ def test_forecast_command_with_a_faked_weather_api(on_disk, tmp_path, monkeypatc
     GatedCrowdModel(ModelConfig.from_yaml(_write(tmp_path / "f.yaml"))).fit(frame, "2021-12-31").save(
         on_disk.model_file
     )
+    assert main(["train-status", "--cutoff", "2021-12-31", "--config", str(_write(tmp_path / "f2.yaml"))]) == 0
     weather = pd.read_csv(on_disk.weather_archive / "park_1.csv", parse_dates=["date"])
     everyone = pd.concat([weather.assign(park_id=p) for p in (1, 2, 3)])
     monkeypatch.setattr(
@@ -70,9 +71,9 @@ def test_forecast_command_with_a_faked_weather_api(on_disk, tmp_path, monkeypatc
     out = tmp_path / "fc.csv"
     assert main(["forecast", str(out), "--to", "2023-01-05"]) == 0
     fc = pd.read_csv(out, parse_dates=["date"])
-    assert fc["date"].max() == pd.Timestamp("2023-01-05") and {"weather", "days_ahead", "open_last_year"} <= set(
-        fc.columns
-    )
+    assert fc["date"].max() == pd.Timestamp("2023-01-05") and {
+        "weather", "days_ahead", "open_last_year", "is_open", "opens", "closes",
+    } <= set(fc.columns)  # fmt: skip
     assert "weather:" in capsys.readouterr().out
 
 

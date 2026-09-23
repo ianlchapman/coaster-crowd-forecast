@@ -118,6 +118,10 @@ class Paths:
     def model_file(self) -> Path:
         return self.models / "crowd_model.joblib"
 
+    @property
+    def status_model_file(self) -> Path:
+        return self.models / "status_model.joblib"
+
     def ensure(self, *dirs: Path) -> None:
         for d in dirs:
             d.mkdir(parents=True, exist_ok=True)

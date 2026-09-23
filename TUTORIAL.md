@@ -366,10 +366,32 @@ Things this repo does not do, in the order we would tackle them:
 
 * **Steady the row-level predictions** by averaging several LightGBM seeds (about 2 points of build-to-build variation per row).
 * **Quantify uncertainty** (quantile or conformal intervals), so `low_confidence` becomes a number instead of a flag.
-* **Predict closures.** Parks are predicted for every date, including days they will be closed.
 * **Ingest real event schedules** instead of copying last year's flags.
 * **Remove the target leak:** rank each park's index using only data available at the forecast date.
-* **More than one test year,** and a rolling-origin evaluation to see how errors vary across years.
 * **Monitor** the `drift_effect` and the gap between forecasts and outcomes once labels arrive.
+
+## 18. Predicting opening hours and closures
+
+The previous version of section 17's list named this gap directly: "parks are predicted for every date, including days they will be closed," and "more than one test year, and a rolling-origin evaluation to see how errors vary across years" (for the crowd model generally). Closing the first gap turned into its own small case study that also produced a real instance of the second lesson — recorded in full in [docs/planning/opening-hours-forecast.md](docs/planning/opening-hours-forecast.md), summarised here.
+
+**The target.** Three new fields on top of `crowd_percent`: `is_open`, `opens`, `closes`. Section 12's table already showed opening hours being *approximated* as an input feature (same weekday last year); the new work is exposing that as an *output*, plus a genuine open/closed prediction, which nothing in the pipeline had ever attempted — closed days are dropped before the crowd-percent training frame is even built (`scoring/enhance.py` filters `status != "closed"`), so this needed its own path to the raw calendar.
+
+**Baseline first, same as section 2.** A lookup: same weekday one year ago, else the park+weekday rate/median over the trailing 12 weeks, else the park's all-time rate/median (`features/status.py`). Then a feature-driven challenger — a LightGBM classifier plus two regressors (`models/status.py`), using the same year-on-year `prior_year_frame` mechanism from section 3.1, applied to `is_open` and to `open_min`/`close_min` instead of `crowd_percent`.
+
+**The window matters even more here than it did in section 1.** A single 90-day held-out test looked fine at first, but rerunning it on four different historical 90-day windows showed the closed-class precision swinging from 0.48 to 0.73 depending on the season the window happened to land in — closures cluster by month, and which months a short window covers changes year to year. The fix was a rolling-origin backtest over several full years instead of one window. Once every fold was a full year, the picture stabilised:
+
+| test year | train yrs | is_open acc (lookup / model) | closed precision (lookup / model) | opens exact (lookup / model) | closes exact (lookup / model) |
+|---|---|---|---|---|---|
+| 2019 | 5  | 0.906 / 0.944 | 0.809 / 0.923 | 0.774 / 0.669 | 0.554 / 0.295 |
+| 2022 | 8  | 0.834 / 0.908 | 0.656 / 0.881 | 0.515 / 0.545 | 0.375 / 0.182 |
+| 2023 | 9  | 0.930 / 0.947 | 0.863 / 0.908 | 0.706 / 0.662 | 0.597 / 0.333 |
+| 2024 | 10 | 0.939 / 0.953 | 0.890 / 0.928 | 0.800 / 0.698 | 0.655 / 0.460 |
+| 2025 | 11 | 0.933 / 0.952 | 0.880 / 0.930 | 0.830 / 0.785 | 0.683 / 0.434 |
+
+Two things fell out of the same table. First, more training years reliably helped both approaches (`experiments/10_multi_year_backtest.py` correlates every metric with years of history in the expected direction) — except 2022, a clear outlier for both, being the first full year after the excluded COVID window, when reopening schedules still didn't resemble pre-pandemic history. Second, the model and the lookup are not uniformly better or worse: the model wins `is_open` in every year; the lookup wins `opens`/`closes` in almost every year. Real schedules repeat close to verbatim year over year, so copying last year's exact value beats a regressor that has to fit one shared set of trees across many parks — the same "same weekday last year is hard to beat" lesson from section 2, showing up again in a different field.
+
+**A documented dead end (section 7's ethos).** Reasoning that closing time might be a "short/normal/long/event day" classification rather than a raw regression, we built exactly that (`models/closing_category.py`): terciles of each park's own non-event close-time history, plus an explicit event-day class, decoded back to a clock time via the park's own median in that bucket. It didn't beat the lookup — worse MAE than either the lookup or the plain regression, because a statistical tercile split doesn't line up with how real schedules actually vary (a handful of discrete, often bimodal values, not a smooth continuum), so two genuinely different real closing times can land in the same bucket and get decoded to neither.
+
+**What shipped.** A blend, not a single winner: `is_open` from the LightGBM model, `opens`/`closes` from the lookup, wired into `pipeline.forecast()` as separate calls rather than a merged model. A new `crowdcast train-status` command fits and saves the classifier+regressors (`Paths.status_model_file`), alongside the existing `crowdcast train` for `crowd_percent`.
 
 For the details behind any section, see [docs/METHODOLOGY.md](docs/METHODOLOGY.md), [docs/RESULTS.md](docs/RESULTS.md), [docs/DATA.md](docs/DATA.md) and the [model card](docs/MODEL_CARD.md).

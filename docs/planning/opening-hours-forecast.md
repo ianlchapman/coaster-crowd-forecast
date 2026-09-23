@@ -220,10 +220,43 @@ repeat almost verbatim year-to-year for a given park, so directly copying last y
 beats a regression/classifier that has to fit one shared set of trees across many parks and years —
 exact repetition is easy for a lookup and hard for anything that must generalize.
 
+## Shipped: the blend, wired into pipeline.forecast()
+
+Decided architecture, matching the revised conclusion above exactly — per field, not per row:
+
+- **`is_open`**: `StatusModel.predict_is_open()` (new method — just the classifier, skips computing the
+  hours regressors' inputs since production doesn't use them for this field).
+- **`opens`/`closes`**: unchanged v1 lookup, straight from `build_future_rows`'s existing
+  `open_min`/`close_min` imputation, blanked wherever the new `is_open` (from the model, not the old
+  heuristic) says closed.
+
+Changes:
+- `src/crowdcast/features/status.py`: new `add_is_open_prior_year` — computes
+  `py_is_open_same_wd`/`py_is_open_wd_mean3` for future rows the same way `build_status_frame` computes
+  them for training (via `prior_year_frame`), since `StatusModel` needs them and `build_future_rows`
+  doesn't compute them (it only has the crowd model's own prior-year/hours features). The old `add_is_open`
+  heuristic function stays in the module (still used by the `05_`/`08_`/`09_`/`10_` experiment scripts as
+  the v1 baseline for backtesting) but is no longer called from `pipeline.py`.
+- `src/crowdcast/models/status.py`: new `StatusModel.predict_is_open()`.
+- `src/crowdcast/pipeline.py`: `forecast()` takes a new required `status_model: StatusModel` argument.
+- `src/crowdcast/config.py`: new `Paths.status_model_file` (`processed/models/status_model.joblib`,
+  parallel to `model_file`).
+- `src/crowdcast/cli.py`: new `train-status` command (mirrors `train`, fits `StatusModel` on
+  `build_status_frame` and saves it); `forecast` command now also loads `paths.status_model_file`.
+- `tests/test_pipeline_integration.py`, `tests/test_cli.py`: updated for the new `forecast()` signature
+  and the `train-status` command; assert `opens`/`closes` are blank exactly where `is_open` is false.
+
+Verified against the real data repo (archive weather, no live API call needed for this check): 0 rows
+where `is_open`/`opens`/`closes` are inconsistent, `is_open` rate ~71% matches the historical base rate.
+
+**Not done** (both still call for a workflow change, not just code — flagged rather than silently
+skipped): the `05_`-`10_` experiment scripts still evaluate the standalone `add_is_open` lookup, not this
+wired-in blend, so there's no single script that backtests the *production* `pipeline.forecast()` output
+end-to-end; and there's no scheduled/documented cadence for re-running `train-status` as new data arrives
+(same gap `train` already has — out of scope for this change).
+
 ## Out of scope (follow-ups)
 
-- Wire `StatusModel` into `pipeline.forecast()` for `is_open` (validated win); decide on `opens`/`closes`
-  once reframed as classification over each park's observed schedule values (see v2 conclusion above).
 - History-length gating for `StatusModel` like `GatedCrowdModel` has for crowd_percent — untested whether
   brand-new parks (all-NaN prior-year features) need a simpler fallback model.
 - One-off/irregular closures (e.g. unannounced single-day closure) not tied to weekday pattern.
