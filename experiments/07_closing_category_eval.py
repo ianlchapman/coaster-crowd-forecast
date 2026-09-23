@@ -6,8 +6,8 @@ three-way comparison on `closes`: lookup vs. free regression vs. this.
 from __future__ import annotations
 
 import pandas as pd
-from _common import out_dir
 
+from _common import out_dir
 from crowdcast.config import Paths
 from crowdcast.data.loaders import load_crowd_calendar, load_parks
 from crowdcast.features.build import park_table
@@ -33,16 +33,21 @@ if __name__ == "__main__":
     pred = model.predict(test)
     print(f"held-out actually-open rows with a recorded schedule: {len(test)}")
 
-    err = (pred["close_min"].to_numpy() - test["close_min"].to_numpy())
+    err = pred["close_min"].to_numpy() - test["close_min"].to_numpy()
     err_abs = pd.Series(err).abs()
     exact = (pred["closes"].to_numpy() == test["closes"].to_numpy()).mean()
     print("\n=== closes (ClosingCategoryModel) ===")
-    print(f"MAE={err_abs.mean():.1f}min  median={err_abs.median():.1f}min  exact={exact:.3f}  within30min={(err_abs <= 30).mean():.3f}")
+    print(
+        f"MAE={err_abs.mean():.1f}min  median={err_abs.median():.1f}min  exact={exact:.3f}  within30min={(err_abs <= 30).mean():.3f}"
+    )
 
     print("\npredicted category distribution:", pred["close_category"].value_counts(normalize=True).round(3).to_dict())
 
     imp = pd.Series(model.clf.booster_.feature_importance("gain"), index=model.clf.feature_name_)
-    print("\ntop category features (% gain):", (100 * imp / imp.sum()).sort_values(ascending=False).head(8).round(1).to_dict())
+    print(
+        "\ntop category features (% gain):",
+        (100 * imp / imp.sum()).sort_values(ascending=False).head(8).round(1).to_dict(),
+    )
 
     print("\nMAE by predicted category:")
     by_cat = pd.DataFrame({"cat": pred["close_category"].to_numpy(), "err": err_abs})

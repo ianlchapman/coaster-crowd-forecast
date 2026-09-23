@@ -6,8 +6,8 @@ having only tested one 90-day window? Reruns the same heuristic + metrics across
 from __future__ import annotations
 
 import pandas as pd
-from _common import load_frame
 
+from _common import load_frame
 from crowdcast.config import Paths
 from crowdcast.data.loaders import load_crowd_calendar
 from crowdcast.features.future import build_future_rows
@@ -73,7 +73,19 @@ if __name__ == "__main__":
             r["years_ago"] = years_ago
             results.append(r)
 
-    out = pd.DataFrame(results)[["years_ago", "cutoff", "n", "is_open_acc", "actual_open_rate", "closed_precision", "closed_recall", "opens_exact", "closes_exact"]]
+    out = pd.DataFrame(results)[
+        [
+            "years_ago",
+            "cutoff",
+            "n",
+            "is_open_acc",
+            "actual_open_rate",
+            "closed_precision",
+            "closed_recall",
+            "opens_exact",
+            "closes_exact",
+        ]
+    ]
     print(out.to_string(index=False))
     print("\nspread (max - min) across windows:")
     for col in ["is_open_acc", "closed_precision", "closed_recall", "opens_exact", "closes_exact"]:

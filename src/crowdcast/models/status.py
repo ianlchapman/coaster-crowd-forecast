@@ -48,11 +48,11 @@ class StatusModel:
         year (see docs/planning/opening-hours-forecast.md); ``opens``/``closes`` still come from the
         lookup in ``pipeline.forecast()``, which wins those fields."""
         is_open_clf, _, _ = self._check_fitted()
-        return is_open_clf.predict(frame[STATUS_FEATURES]).astype(bool)
+        return np.asarray(is_open_clf.predict(frame[STATUS_FEATURES])).astype(bool)
 
     def predict(self, frame: pd.DataFrame) -> pd.DataFrame:
         is_open_clf, opens_reg, closes_reg = self._check_fitted()
-        is_open = is_open_clf.predict(frame[STATUS_FEATURES]).astype(bool)
+        is_open = np.asarray(is_open_clf.predict(frame[STATUS_FEATURES])).astype(bool)
         # real schedules sit on a 30-minute grid (see docs/planning/opening-hours-forecast.md); round the
         # regressor's continuous output onto it so near-miss predictions still land on the actual value.
         open_min = np.round(np.asarray(opens_reg.predict(frame[HOURS_FEATURES]), dtype=float) / 30) * 30

@@ -8,8 +8,8 @@ than one 90-day window.
 from __future__ import annotations
 
 import pandas as pd
-from _common import load_frame, out_dir
 
+from _common import load_frame, out_dir
 from crowdcast.config import Paths
 from crowdcast.data.loaders import load_crowd_calendar, load_parks
 from crowdcast.features.build import park_table
@@ -42,10 +42,15 @@ def is_open_metrics(is_open: pd.Series, actual_open: pd.Series) -> dict:
 
 
 def hours_metrics(pred_min: pd.Series, actual_min: pd.Series, pred_str: pd.Series, actual_str: pd.Series) -> dict:
-    err = (pred_min.to_numpy() - actual_min.to_numpy())
+    err = pred_min.to_numpy() - actual_min.to_numpy()
     err_abs = pd.Series(err).abs()
     exact = (pred_str.fillna("").to_numpy() == actual_str.fillna("").to_numpy()).mean()
-    return {"n": len(err_abs), "MAE": round(err_abs.mean(), 1), "exact": round(exact, 3), "within30min": round((err_abs <= 30).mean(), 3)}
+    return {
+        "n": len(err_abs),
+        "MAE": round(err_abs.mean(), 1),
+        "exact": round(exact, 3),
+        "within30min": round((err_abs <= 30).mean(), 3),
+    }
 
 
 if __name__ == "__main__":
@@ -53,7 +58,9 @@ if __name__ == "__main__":
     raw = load_crowd_calendar(paths.crowd_calendar)
     parks = park_table(load_parks(paths.parks_csv), pd.read_csv(paths.parks_enriched))
     scores = DailyScores.load(paths.daily_scores)
-    print(f"train: everything through {CUTOFF.date()} (COVID rows excluded)  |  test: {CUTOFF.date()} - {TEST_END.date()}")
+    print(
+        f"train: everything through {CUTOFF.date()} (COVID rows excluded)  |  test: {CUTOFF.date()} - {TEST_END.date()}"
+    )
 
     # --- v1: lookup heuristic --------------------------------------------------------------------------
     labelled = load_frame()
@@ -70,10 +77,21 @@ if __name__ == "__main__":
     print(f"\nv1 lookup: {len(v1)} held-out rows, {v1['park_id'].nunique()} parks")
     print("is_open:", is_open_metrics(v1["is_open"], v1["actual_open"]))
     v1_open = v1[v1["actual_open"]]
-    print("opens  :", hours_metrics(v1_open["open_min"], pd.to_datetime(v1_open["opens"], format="%H:%M").dt.hour * 60 + pd.to_datetime(v1_open["opens"], format="%H:%M").dt.minute, v1_open["pred_opens"], v1_open["opens"]))
+    print(
+        "opens  :",
+        hours_metrics(
+            v1_open["open_min"],
+            pd.to_datetime(v1_open["opens"], format="%H:%M").dt.hour * 60
+            + pd.to_datetime(v1_open["opens"], format="%H:%M").dt.minute,
+            v1_open["pred_opens"],
+            v1_open["opens"],
+        ),
+    )
     v1_close_actual_min = pd.to_datetime(v1_open["closes"], format="%H:%M", errors="coerce")
     v1_close_actual_min = v1_close_actual_min.dt.hour * 60 + v1_close_actual_min.dt.minute
-    print("closes :", hours_metrics(v1_open["close_min"], v1_close_actual_min, v1_open["pred_closes"], v1_open["closes"]))
+    print(
+        "closes :", hours_metrics(v1_open["close_min"], v1_close_actual_min, v1_open["pred_closes"], v1_open["closes"])
+    )
 
     # --- v2: StatusModel (LightGBM classifier + regressors) --------------------------------------------
     frame = build_status_frame(raw, parks, scores)
@@ -83,8 +101,21 @@ if __name__ == "__main__":
     print(f"\nv2 StatusModel: {len(test)} held-out rows, {test['park_id'].nunique()} parks")
     print("is_open:", is_open_metrics(pred2["is_open"], test["is_open"]))
     both = test["is_open"].to_numpy()
-    print("opens  :", hours_metrics(pred2.loc[both, "open_min"], test.loc[both, "open_min"], pred2.loc[both, "opens"], test.loc[both, "opens"]))
-    print("closes :", hours_metrics(pred2.loc[both, "close_min"], test.loc[both, "close_min"], pred2.loc[both, "closes"], test.loc[both, "closes"]))
+    print(
+        "opens  :",
+        hours_metrics(
+            pred2.loc[both, "open_min"], test.loc[both, "open_min"], pred2.loc[both, "opens"], test.loc[both, "opens"]
+        ),
+    )
+    print(
+        "closes :",
+        hours_metrics(
+            pred2.loc[both, "close_min"],
+            test.loc[both, "close_min"],
+            pred2.loc[both, "closes"],
+            test.loc[both, "closes"],
+        ),
+    )
 
     # --- v3: ClosingCategoryModel (closes only) ---------------------------------------------------------
     model3 = ClosingCategoryModel().fit(frame, CUTOFF)
@@ -110,11 +141,16 @@ if __name__ == "__main__":
     actual_open_min = actual_open_min.dt.hour * 60 + actual_open_min.dt.minute
     actual_close_min = pd.to_datetime(v1m_open["closes"], format="%H:%M", errors="coerce")
     actual_close_min = actual_close_min.dt.hour * 60 + actual_close_min.dt.minute
-    print("v1 opens  :", hours_metrics(v1m_open["open_min"], actual_open_min, v1m_open["pred_opens"], v1m_open["opens"]))
+    print(
+        "v1 opens  :", hours_metrics(v1m_open["open_min"], actual_open_min, v1m_open["pred_opens"], v1m_open["opens"])
+    )
     print("v2 opens  :", hours_metrics(v2m_open["open_min"], actual_open_min, v2m_open["opens"], v1m_open["opens"]))
-    print("v1 closes :", hours_metrics(v1m_open["close_min"], actual_close_min, v1m_open["pred_closes"], v1m_open["closes"]))
+    print(
+        "v1 closes :",
+        hours_metrics(v1m_open["close_min"], actual_close_min, v1m_open["pred_closes"], v1m_open["closes"]),
+    )
     print("v2 closes :", hours_metrics(v2m_open["close_min"], actual_close_min, v2m_open["closes"], v1m_open["closes"]))
 
-    pd.DataFrame(
-        {"cutoff": [str(CUTOFF.date())], "test_end": [str(TEST_END.date())]}
-    ).to_csv(out_dir() / "2025_holdout_eval_meta.csv", index=False)
+    pd.DataFrame({"cutoff": [str(CUTOFF.date())], "test_end": [str(TEST_END.date())]}).to_csv(
+        out_dir() / "2025_holdout_eval_meta.csv", index=False
+    )

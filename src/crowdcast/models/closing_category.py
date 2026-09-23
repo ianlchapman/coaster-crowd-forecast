@@ -38,7 +38,9 @@ def _categorize(open_rows: pd.DataFrame) -> tuple[pd.Series, pd.DataFrame]:
     """Category per row, plus the per-park [q33, q67] boundary table used to build it (non-event rows only)."""
     is_event = _is_closing_event(open_rows)
     non_event = open_rows[~is_event]
-    q = non_event.groupby("park_id")["close_min"].quantile([1 / 3, 2 / 3]).unstack()
+    long = non_event.groupby("park_id")["close_min"].quantile(np.array([1 / 3, 2 / 3])).rename("value").reset_index()
+    long.columns = ["park_id", "q", "value"]
+    q = long.pivot_table(index="park_id", columns="q", values="value")
     q.columns = ["q33", "q67"]
 
     cat = pd.Series("normal", index=open_rows.index, dtype="object")
@@ -68,19 +70,36 @@ class ClosingCategoryModel:
         self.clf = lgb.LGBMClassifier(**self.config.lightgbm).fit(open_rows[CATEGORY_FEATURES], cat)
 
         labelled = open_rows.assign(close_category=cat)
-        self.park_category_close = labelled.groupby(["park_id", "close_category"], observed=True)["close_min"].median().to_dict()
-        self.park_median_close = open_rows.groupby("park_id")["close_min"].median().to_dict()
+        by_park_category = (
+            labelled.groupby(["park_id", "close_category"], observed=True)["close_min"].median().reset_index()
+        )
+        self.park_category_close = {
+            (int(pid), str(c)): float(v)
+            for pid, c, v in zip(
+                by_park_category["park_id"],
+                by_park_category["close_category"],
+                by_park_category["close_min"],
+                strict=True,
+            )
+        }
+        by_park = open_rows.groupby("park_id")["close_min"].median().reset_index()
+        self.park_median_close = {
+            int(pid): float(v) for pid, v in zip(by_park["park_id"], by_park["close_min"], strict=True)
+        }
         self.global_median_close = float(open_rows["close_min"].median())
-        self.category_global_offset = (
+        by_category = (
             labelled.groupby("close_category", observed=True)["close_min"].median() - self.global_median_close
-        ).to_dict()
+        ).reset_index()
+        self.category_global_offset = {
+            str(c): float(v) for c, v in zip(by_category["close_category"], by_category["close_min"], strict=True)
+        }
         return self
 
     def _decode(self, park_id: pd.Series, category: np.ndarray) -> np.ndarray:
         """Category -> clock time: this park's own median in that category, else this park's median close
         shifted by the category's average effect across all parks, else the global median close."""
         out = np.empty(len(park_id), dtype=float)
-        for i, (pid, cat) in enumerate(zip(park_id, category)):
+        for i, (pid, cat) in enumerate(zip(park_id, category, strict=True)):
             if (pid, cat) in self.park_category_close:
                 out[i] = self.park_category_close[(pid, cat)]
             else:
@@ -91,7 +110,7 @@ class ClosingCategoryModel:
     def predict(self, frame: pd.DataFrame) -> pd.DataFrame:
         if self.clf is None:
             raise RuntimeError("model is not fitted")
-        category = self.clf.predict(frame[CATEGORY_FEATURES])
+        category = np.asarray(self.clf.predict(frame[CATEGORY_FEATURES]))
         close_min = self._decode(frame["park_id"], category)
         out = pd.DataFrame(
             {

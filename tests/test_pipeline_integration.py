@@ -47,9 +47,17 @@ def test_forecast_from_files_with_a_faked_weather_api(data_dir, monkeypatch, fas
     fake = s.weather[s.weather["date"].isin(fc_days)]
     monkeypatch.setattr(pipeline, "fetch_forecast", lambda coords, cache, refresh=False: fake)
     out = pipeline.forecast(paths, model, status_model, end="2023-01-05")
-    assert {"prediction", "is_open", "opens", "closes", "days_ahead", "weather", "open_last_year", "drift_effect", "low_confidence"} <= set(
-        out.columns
-    )
+    assert {
+        "prediction",
+        "is_open",
+        "opens",
+        "closes",
+        "days_ahead",
+        "weather",
+        "open_last_year",
+        "drift_effect",
+        "low_confidence",
+    } <= set(out.columns)
     assert out["date"].min() > frame["date"].max() and out["date"].max() == pd.Timestamp("2023-01-05")
     assert out["prediction"].between(0, 100).all()
     assert set(out["weather"]) <= {"archive", "forecast", "none"}

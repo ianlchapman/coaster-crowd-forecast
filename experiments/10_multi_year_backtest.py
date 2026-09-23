@@ -12,8 +12,8 @@ rows excluded by default) and test on the full year that follows. Two things thi
 from __future__ import annotations
 
 import pandas as pd
-from _common import load_frame, out_dir
 
+from _common import load_frame, out_dir
 from crowdcast.config import Paths
 from crowdcast.data.loaders import load_crowd_calendar, load_parks
 from crowdcast.features.build import park_table
@@ -25,7 +25,13 @@ from crowdcast.scoring.daily import DailyScores
 from crowdcast.weather.archive import load_archive
 from crowdcast.weather.features import derive_weather_features
 
-TEST_YEARS = [2019, 2022, 2023, 2024, 2025]  # skip 2020/2021: real closures that year aren't a fair "normal seasonality" test
+TEST_YEARS = [
+    2019,
+    2022,
+    2023,
+    2024,
+    2025,
+]  # skip 2020/2021: real closures that year aren't a fair "normal seasonality" test
 
 
 def is_open_metrics(is_open: pd.Series, actual_open: pd.Series) -> dict:
@@ -40,13 +46,15 @@ def is_open_metrics(is_open: pd.Series, actual_open: pd.Series) -> dict:
 
 
 def hours_metrics(pred_min: pd.Series, actual_min: pd.Series, pred_str: pd.Series, actual_str: pd.Series) -> dict:
-    err_abs = (pred_min.to_numpy() - actual_min.to_numpy())
+    err_abs = pred_min.to_numpy() - actual_min.to_numpy()
     err_abs = pd.Series(err_abs).abs()
     exact = (pred_str.fillna("").to_numpy() == actual_str.fillna("").to_numpy()).mean()
     return {"MAE": round(err_abs.mean(), 1), "exact": round(exact, 3)}
 
 
-def run_fold(paths: Paths, labelled: pd.DataFrame, raw: pd.DataFrame, frame: pd.DataFrame, scores, weather, test_year: int) -> dict:
+def run_fold(
+    paths: Paths, labelled: pd.DataFrame, raw: pd.DataFrame, frame: pd.DataFrame, scores, weather, test_year: int
+) -> dict:
     cutoff = pd.Timestamp(f"{test_year - 1}-12-31")
     test_end = pd.Timestamp(f"{test_year}-12-31")
     train_years = labelled.loc[labelled["date"] <= cutoff, "date"].dt.year.nunique()

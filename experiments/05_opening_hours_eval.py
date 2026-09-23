@@ -8,8 +8,8 @@ happened (the raw calendar, which still has closed days that the crowd-percent t
 from __future__ import annotations
 
 import pandas as pd
-from _common import load_frame, out_dir
 
+from _common import load_frame, out_dir
 from crowdcast.config import Paths
 from crowdcast.data.loaders import load_crowd_calendar
 from crowdcast.features.future import build_future_rows
@@ -34,7 +34,9 @@ def build_held_out_predictions(paths: Paths, labelled: pd.DataFrame) -> pd.DataF
     rows = add_is_open(rows, status_calendar, cutoff)
     rows["pred_opens"] = minutes_to_hhmm(rows["open_min"]).where(rows["is_open"])
     rows["pred_closes"] = minutes_to_hhmm(rows["close_min"]).where(rows["is_open"])
-    print(f"data through {last.date()}, held out from {cutoff.date()} ({HOLD_OUT_DAYS}d): {len(rows)} rows, {rows['park_id'].nunique()} parks")
+    print(
+        f"data through {last.date()}, held out from {cutoff.date()} ({HOLD_OUT_DAYS}d): {len(rows)} rows, {rows['park_id'].nunique()} parks"
+    )
     return rows
 
 
@@ -60,15 +62,21 @@ def score_is_open(merged: pd.DataFrame) -> None:
     closed_precision = tn / (tn + fn) if (tn + fn) else float("nan")
 
     print("\n=== is_open flag ===")
-    print(f"actual open-rate: {base_rate:.3f}  |  naive majority-class baseline accuracy: {max(base_rate, 1 - base_rate):.4f}")
+    print(
+        f"actual open-rate: {base_rate:.3f}  |  naive majority-class baseline accuracy: {max(base_rate, 1 - base_rate):.4f}"
+    )
     print(f"accuracy: {acc:.4f}   open-class precision/recall: {precision:.4f}/{recall:.4f}")
-    print(f"closed-class precision/recall: {closed_precision:.4f}/{closed_recall:.4f}  (confusion tp={tp} tn={tn} fp={fp} fn={fn})")
+    print(
+        f"closed-class precision/recall: {closed_precision:.4f}/{closed_recall:.4f}  (confusion tp={tp} tn={tn} fp={fp} fn={fn})"
+    )
 
     print("by days_ahead bucket:")
     bins, labels = BUCKETS
     merged = merged.assign(bucket=pd.cut(merged["days_ahead"], bins=bins, labels=labels))
     for b, g in merged.groupby("bucket", observed=True):
-        print(f"  {b:>7}: n={len(g):6d}  accuracy={(g['is_open'] == g['actual_open']).mean():.4f}  actual_open_rate={g['actual_open'].mean():.3f}")
+        print(
+            f"  {b:>7}: n={len(g):6d}  accuracy={(g['is_open'] == g['actual_open']).mean():.4f}  actual_open_rate={g['actual_open'].mean():.3f}"
+        )
 
 
 def score_hours(merged: pd.DataFrame) -> None:
@@ -96,7 +104,9 @@ def score_hours(merged: pd.DataFrame) -> None:
     open_rows = open_rows.assign(bucket=pd.cut(open_rows["days_ahead"], bins=bins, labels=labels))
     for b, g in open_rows.groupby("bucket", observed=True):
         oe, ce = (g["open_min"] - g["actual_open_min"]).abs(), (g["close_min"] - g["actual_close_min"]).abs()
-        print(f"  {b:>7}: n={len(g):6d}  opens_MAE={oe.mean():5.1f}min  closes_MAE={ce.mean():5.1f}min  opens_exact={(g['pred_opens'] == g['opens']).mean():.3f}")
+        print(
+            f"  {b:>7}: n={len(g):6d}  opens_MAE={oe.mean():5.1f}min  closes_MAE={ce.mean():5.1f}min  opens_exact={(g['pred_opens'] == g['opens']).mean():.3f}"
+        )
 
 
 if __name__ == "__main__":
