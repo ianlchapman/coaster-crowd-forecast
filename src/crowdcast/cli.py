@@ -127,6 +127,36 @@ def _cmd_forecast(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_accuracy(args: argparse.Namespace) -> int:
+    from crowdcast.data.loaders import load_crowd_calendar
+    from crowdcast.evaluation import accuracy as acc
+
+    paths = Paths()
+    out_dir = args.out_dir or paths.accuracy_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    asof = pd.Timestamp(args.asof or pd.Timestamp.now("UTC").date())
+    log_file = out_dir / "predictions-log.csv"
+    log = pd.read_csv(log_file, parse_dates=["made_on", "date"]) if log_file.exists() else None
+    if args.forecast:
+        snap = acc.snapshot(pd.read_csv(args.forecast), asof, acc.parse_leads(args.leads))
+        log = acc.append_log(log, snap)
+        print(f"logged {len(snap):,} predictions made on {asof.date()}")
+    if log is None:
+        print("error: no predictions log yet; pass --forecast FILE", file=sys.stderr)
+        return 2
+    log.to_csv(log_file, index=False)
+    detail = acc.score(log, acc.actuals(load_crowd_calendar(paths.crowd_calendar), asof), asof)
+    summary = acc.summarise(detail, asof)
+    detail.to_csv(out_dir / "accuracy-detail.csv", index=False)
+    summary.to_csv(out_dir / "accuracy-summary.csv", index=False)
+    acc.summarise(detail, asof, by_park=True).to_csv(out_dir / "accuracy-by-park.csv", index=False)
+    text = acc.headline(summary)
+    print(text or "no scored predictions yet: forecasts need their dates to pass before they can be checked")
+    (out_dir / "headline.txt").write_text((text or "") + "\n")
+    print(f"wrote {out_dir} ({len(log):,} logged, {len(detail):,} scored)")
+    return 0
+
+
 def _cmd_weather_fetch(args: argparse.Namespace) -> int:
     from crowdcast.data.loaders import load_crowd_calendar
     from crowdcast.weather.archive import fetch_archive
@@ -221,6 +251,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--to", help="last date (default: today + 15)")
     s.add_argument("--refresh", action="store_true", help="ignore the 3-hour forecast cache")
     s.set_defaults(func=_cmd_forecast)
+
+    s = sub.add_parser(
+        "accuracy", help="log today's forecast, then score earlier forecasts against actuals (7/14/30/90-day windows)"
+    )
+    s.add_argument("--forecast", type=Path, help="forecast CSV to log (omit to just re-score the existing log)")
+    s.add_argument("--asof", help="treat this as today (default: today, UTC)")
+    s.add_argument("--leads", default="1,7,14,30,90", help="lead times in days to keep in the log")
+    s.add_argument("--out-dir", type=Path, help="default: <data dir>/accuracy")
+    s.set_defaults(func=_cmd_accuracy)
 
     s = sub.add_parser(
         "weather-fetch", help="download historical weather for every park (Open-Meteo, cached, resumable)"
