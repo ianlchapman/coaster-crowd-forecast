@@ -11,6 +11,7 @@ from crowdcast.features.status_build import build_status_frame
 from crowdcast.models.gated import GatedCrowdModel
 from crowdcast.models.status import StatusModel
 from crowdcast.scoring.daily import DailyScores
+from crowdcast.scoring.enhance import enhance_calendar
 
 
 def test_enhanced_calendar_is_written_and_reloadable(data_dir):
@@ -62,3 +63,16 @@ def test_forecast_from_files_with_a_faked_weather_api(data_dir, monkeypatch, fas
     assert out["prediction"].between(0, 100).all()
     assert set(out["weather"]) <= {"archive", "forecast", "none"}
     assert out.loc[~out["is_open"], ["opens", "closes"]].isna().all().all()
+
+
+def test_park_missing_from_scores_is_skipped_by_enhance_and_status_frame(data_dir):
+    """A park that left the loader's park list (e.g. closed for good) keeps its calendar history but has no scores."""
+    paths, _ = data_dir
+    raw = load_crowd_calendar(paths.crowd_calendar)
+    orphan = raw[raw["park_id"] == raw["park_id"].iloc[0]].assign(park_id=9999)
+    scores = DailyScores.load(paths.daily_scores)
+    with_orphan = pd.concat([raw, orphan], ignore_index=True)
+    assert 9999 not in scores.park_ids
+    assert 9999 not in set(enhance_calendar(with_orphan, scores)["park_id"])
+    parks = park_table(load_parks(paths.parks_csv), pd.read_csv(paths.parks_enriched))
+    assert 9999 not in set(build_status_frame(with_orphan, parks, scores)["park_id"])
