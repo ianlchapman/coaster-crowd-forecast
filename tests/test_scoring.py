@@ -80,3 +80,20 @@ def test_enhance_drops_closed_and_predicted_rows():
     out = enhance_calendar(crowd, s)
     assert out["date"].tolist() == [dates[0], dates[3]]
     assert {"national_holiday", "school_holiday", "days_until_school_holiday"} <= set(out.columns)
+
+
+def test_enhance_drops_parks_without_scores():
+    s = compute_daily_scores(_weights(), _matrices())
+    dates = pd.date_range("2024-01-01", periods=2)
+    crowd = pd.concat(
+        [
+            pd.DataFrame(
+                {"park_id": pid, "date": dates, "status": "open", "crowd_percent": 10, "predicted": False,
+                 "opens": "10:00", "closes": "18:00", "events": pd.array([None] * 2, dtype="string")}
+            )
+            for pid in (1, 999)
+        ],
+        ignore_index=True,
+    )  # fmt: skip
+    out = enhance_calendar(crowd, s)
+    assert set(out["park_id"]) == {1}
