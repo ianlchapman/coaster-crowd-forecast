@@ -115,6 +115,10 @@ class Paths:
         return self.processed / "holidays" / "park_daily_scores.npz"
 
     @property
+    def accuracy_dir(self) -> Path:
+        return self.root / "accuracy"
+
+    @property
     def model_file(self) -> Path:
         return self.models / "crowd_model.joblib"
 
