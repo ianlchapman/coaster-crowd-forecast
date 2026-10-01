@@ -38,7 +38,10 @@ def build_status_frame(raw_calendar: pd.DataFrame, parks: pd.DataFrame, scores: 
 
     ``parks``: :func:`crowdcast.features.build.park_table` output. ``scores``: holiday scores for the same parks.
     """
-    df = raw_calendar[raw_calendar["status"].isin(["open", "closed"])].copy()
+    df = raw_calendar[raw_calendar["status"].isin(["open", "closed"])]
+    df = df[
+        df["park_id"].isin(scores.park_ids)
+    ].copy()  # parks gone from the loader's list (e.g. closed for good) have no scores
     df["is_open"] = df["status"].eq("open")
     df = df.merge(parks, on="park_id", how="left").sort_values(["park_id", "date"]).reset_index(drop=True)
     add_calendar_features(df)
