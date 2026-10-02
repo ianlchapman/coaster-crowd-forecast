@@ -65,6 +65,36 @@ def score(
     return df[DETAIL_COLUMNS].sort_values(["date", "park_id", "lead_days"]).reset_index(drop=True)
 
 
+def daily_by_park(detail: pd.DataFrame, leads: tuple[int, ...] = LEADS) -> pd.DataFrame:
+    """Full-history wide table, one row per park and date: ``actual`` plus ``pred_<lead>d`` for each lead (blank if none)."""
+    cols = ["park_id", "date", "actual", *[f"pred_{n}d" for n in leads]]
+    if detail.empty:
+        return pd.DataFrame(columns=cols)
+    wide = detail.pivot_table(index=["park_id", "date"], columns="lead_days", values="prediction", aggfunc="last")
+    wide.columns = [f"pred_{int(n)}d" for n in wide.columns]
+    actual = detail.groupby(["park_id", "date"])["actual"].first()
+    out = wide.join(actual).reset_index()
+    for c in cols:
+        if c not in out.columns:
+            out[c] = float("nan")
+    out = out[cols].sort_values(["date", "park_id"]).reset_index(drop=True)
+    out[cols[2:]] = out[cols[2:]].round(2)
+    return out
+
+
+def daily_network(by_park: pd.DataFrame) -> pd.DataFrame:
+    """One row per date, averaged over parks: ``n_parks`` with an actual, mean ``actual`` and mean ``pred_<lead>d``.
+
+    Each column averages the parks that have a value for it, so a lead that only covers some parks is not diluted.
+    """
+    if by_park.empty:
+        return pd.DataFrame(columns=["date", "n_parks", *by_park.columns[2:]])
+    g = by_park.drop(columns="park_id").groupby("date")
+    out = g.mean().round(2)
+    out.insert(0, "n_parks", g["actual"].count())
+    return out.reset_index()
+
+
 def _stats(g: pd.DataFrame) -> dict[str, float]:
     mae = float(g["abs_error"].mean())
     return {
@@ -121,6 +151,8 @@ __all__ = [
     "WINDOWS",
     "actuals",
     "append_log",
+    "daily_by_park",
+    "daily_network",
     "headline",
     "parse_leads",
     "score",
