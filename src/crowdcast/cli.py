@@ -145,15 +145,19 @@ def _cmd_accuracy(args: argparse.Namespace) -> int:
         print("error: no predictions log yet; pass --forecast FILE", file=sys.stderr)
         return 2
     log.to_csv(log_file, index=False)
-    detail = acc.score(log, acc.actuals(load_crowd_calendar(paths.crowd_calendar), asof), asof)
+    observed = acc.actuals(load_crowd_calendar(paths.crowd_calendar), asof)
+    scored = acc.score(log, observed, asof, max_window=36500)  # all history, not just the last 90 days
+    by_park = acc.daily_by_park(scored)
+    by_park.to_csv(out_dir / "accuracy-daily-park.csv", index=False)
+    acc.daily_network(by_park).to_csv(out_dir / "accuracy-daily-network.csv", index=False)
+    detail = scored[pd.to_datetime(scored["date"]) >= asof - pd.Timedelta(days=max(acc.WINDOWS))]
     summary = acc.summarise(detail, asof)
-    detail.to_csv(out_dir / "accuracy-detail.csv", index=False)
     summary.to_csv(out_dir / "accuracy-summary.csv", index=False)
     acc.summarise(detail, asof, by_park=True).to_csv(out_dir / "accuracy-by-park.csv", index=False)
     text = acc.headline(summary)
     print(text or "no scored predictions yet: forecasts need their dates to pass before they can be checked")
     (out_dir / "headline.txt").write_text((text or "") + "\n")
-    print(f"wrote {out_dir} ({len(log):,} logged, {len(detail):,} scored)")
+    print(f"wrote {out_dir} ({len(log):,} logged, {len(scored):,} scored)")
     return 0
 
 

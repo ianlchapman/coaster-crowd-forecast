@@ -72,10 +72,26 @@ def test_accuracy_command_end_to_end(data_dir, monkeypatch, tmp_path, capsys):
     out = paths.accuracy_dir
     for name in (
         "predictions-log.csv",
-        "accuracy-detail.csv",
+        "accuracy-daily-park.csv",
+        "accuracy-daily-network.csv",
         "accuracy-summary.csv",
         "accuracy-by-park.csv",
         "headline.txt",
     ):
         assert (out / name).exists()
     assert "accuracy" in capsys.readouterr().out
+
+
+def test_daily_files_are_wide_and_network_averages_parks():
+    log = acc.snapshot(_forecast("2026-01-01", 50), "2026-01-01")
+    other = log.assign(park_id=2, prediction=70.0)
+    observed = acc.actuals(
+        pd.concat([_crowd("2026-01-01", 20, 40), _crowd("2026-01-01", 20, 60).assign(park_id=2)]), "2026-01-20"
+    )
+    scored = acc.score(pd.concat([log, other]), observed, "2026-01-20", max_window=36500)
+    wide = acc.daily_by_park(scored)
+    row = wide[(wide["park_id"] == 1) & (wide["date"] == pd.Timestamp("2026-01-08"))].iloc[0]
+    assert (row["actual"], row["pred_7d"]) == (40.0, 50.0) and pd.isna(row["pred_1d"])
+    net = acc.daily_network(wide)
+    r = net[net["date"] == pd.Timestamp("2026-01-08")].iloc[0]
+    assert (r["n_parks"], r["actual"], r["pred_7d"]) == (2, 50.0, 60.0)
