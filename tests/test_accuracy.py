@@ -95,3 +95,27 @@ def test_daily_files_are_wide_and_network_averages_parks():
     net = acc.daily_network(wide)
     r = net[net["date"] == pd.Timestamp("2026-01-08")].iloc[0]
     assert (r["n_parks"], r["actual"], r["pred_7d"]) == (2, 50.0, 60.0)
+
+
+def test_backtest_rows_are_scored_but_live_wins_a_tie():
+    live = acc.snapshot(_forecast("2026-01-01", 50), "2026-01-01")
+    replay = live.assign(prediction=80.0, source=acc.BACKTEST)
+    older = replay.assign(made_on=pd.Timestamp("2025-12-25"), date=replay["date"] - pd.Timedelta(days=7))
+    log = acc.append_log(acc.append_log(None, replay), live)  # same made_on, different source: both kept
+    assert len(log) == 10
+    log = acc.append_log(log, older)
+    observed = acc.actuals(_crowd("2025-12-01", 60, 40), "2026-02-01")
+    detail = acc.score(log, observed, "2026-02-01")
+    tie = detail[(detail["made_on"] == pd.Timestamp("2026-01-01")) & (detail["lead_days"] == 7)]
+    assert tie["prediction"].eq(50).all() and tie["source"].eq(acc.LIVE).all()  # live beat the replay
+    wide = acc.daily_by_park(detail)
+    assert set(wide["source"]) == {acc.LIVE, acc.BACKTEST}
+    row = acc.summarise(detail, "2026-02-01").query("window_days == 90 and lead_days == 7").iloc[0]
+    assert 0 < row["backtest_pct"] < 100
+
+
+def test_old_log_without_source_column_is_treated_as_live():
+    live = acc.snapshot(_forecast("2026-01-01", 50), "2026-01-01")
+    old = live.drop(columns="source")
+    log = acc.append_log(old, acc.snapshot(_forecast("2026-01-02", 60), "2026-01-02"))
+    assert set(log["source"]) == {acc.LIVE} and len(log) == 10

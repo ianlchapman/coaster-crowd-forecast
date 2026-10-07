@@ -161,6 +161,30 @@ def _cmd_accuracy(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_accuracy_backfill(args: argparse.Namespace) -> int:
+    from crowdcast.evaluation import accuracy as acc
+    from crowdcast.evaluation.backfill import backfill_log
+    from crowdcast.pipeline import load_training_frame
+
+    paths = Paths()
+    out_dir = args.out_dir or paths.accuracy_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    asof = pd.Timestamp(args.asof or pd.Timestamp.now("UTC").date())
+    days = [asof - pd.Timedelta(days=d) for d in range(1, args.weeks * 7 + 1)][::-1]
+    prev = paths.weather_previous_runs / "prev_runs_daily.csv"
+    archived = pd.read_csv(prev, parse_dates=["date"]) if prev.exists() else None
+    new = backfill_log(
+        load_training_frame(paths), days, acc.parse_leads(args.leads), archived, refit_days=args.refit_days
+    )
+    log_file = out_dir / "predictions-log.csv"
+    log = pd.read_csv(log_file, parse_dates=["made_on", "date"]) if log_file.exists() else None
+    log = acc.append_log(log, new)
+    log.to_csv(log_file, index=False)
+    print(f"backtested {len(new):,} predictions made {days[0].date()}..{days[-1].date()}; log now {len(log):,} rows")
+    print("now run `crowdcast accuracy` (no --forecast) to score them")
+    return 0
+
+
 def _cmd_weather_fetch(args: argparse.Namespace) -> int:
     from crowdcast.data.loaders import load_crowd_calendar
     from crowdcast.weather.archive import fetch_archive
@@ -264,6 +288,19 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--leads", default="1,7,14,30,90", help="lead times in days to keep in the log")
     s.add_argument("--out-dir", type=Path, help="default: <data dir>/accuracy")
     s.set_defaults(func=_cmd_accuracy)
+
+    s = sub.add_parser(
+        "accuracy-backfill",
+        help="replay past forecasts (one per day, model refit weekly) into the accuracy log, tagged source=backtest",
+    )
+    s.add_argument("--weeks", type=int, default=26, help="how far back to start replaying")
+    s.add_argument(
+        "--refit-days", type=int, default=7, help="refit the model every N replayed days (one forecast per day)"
+    )
+    s.add_argument("--asof", help="treat this as today (default: today, UTC)")
+    s.add_argument("--leads", default="1,7,14,30,90", help="lead times in days to keep in the log")
+    s.add_argument("--out-dir", type=Path, help="default: <data dir>/accuracy")
+    s.set_defaults(func=_cmd_accuracy_backfill)
 
     s = sub.add_parser(
         "weather-fetch", help="download historical weather for every park (Open-Meteo, cached, resumable)"
