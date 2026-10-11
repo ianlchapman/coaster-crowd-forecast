@@ -72,7 +72,7 @@ def test_forecast_command_with_a_faked_weather_api(on_disk, tmp_path, monkeypatc
     assert main(["forecast", str(out), "--to", "2023-01-05"]) == 0
     fc = pd.read_csv(out, parse_dates=["date"])
     assert fc["date"].max() == pd.Timestamp("2023-01-05") and {
-        "weather", "days_ahead", "open_last_year", "is_open", "opens", "closes",
+        "weather", "days_ahead", "open_last_year", "is_open", "opens", "closes", "hours_estimated",
     } <= set(fc.columns)  # fmt: skip
     assert "weather:" in capsys.readouterr().out
 

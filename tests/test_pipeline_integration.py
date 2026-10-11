@@ -53,6 +53,7 @@ def test_forecast_from_files_with_a_faked_weather_api(data_dir, monkeypatch, fas
         "is_open",
         "opens",
         "closes",
+        "hours_estimated",
         "days_ahead",
         "weather",
         "open_last_year",

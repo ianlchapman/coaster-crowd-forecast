@@ -76,6 +76,7 @@ def forecast(
         is_open=is_open.to_numpy(),
         opens=minutes_to_hhmm(rows["open_min"]).where(is_open).to_numpy(),
         closes=minutes_to_hhmm(rows["close_min"]).where(is_open).to_numpy(),
+        hours_estimated=rows["hours_estimated"].to_numpy(),
         days_ahead=rows["days_ahead"].to_numpy(),
         weather=rows["wx_source"].to_numpy(),
         open_last_year=rows["open_last_year"].to_numpy(),

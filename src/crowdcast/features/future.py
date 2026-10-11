@@ -43,6 +43,7 @@ def _add_hours_and_events(rows: pd.DataFrame, labelled: pd.DataFrame, last: pd.T
     last_year = labelled.set_index(["park_id", "date"])[[*HOURS, *EVENTS]].reindex(
         pd.MultiIndex.from_arrays([rows["park_id"], rows["date"] - LAST_YEAR])
     )
+    rows["hours_estimated"] = ~last_year[HOURS].notna().all(axis=1).to_numpy()
     for col in HOURS:
         rows[col] = (
             pd.Series(last_year[col].to_numpy(), index=rows.index)
@@ -82,7 +83,8 @@ def build_future_rows(
 
     ``labelled``: feature frame from :func:`crowdcast.features.build.build_feature_frame` (must include ``py_same_wd``).
     ``weather``: ``park_id, date, wx_*, wx_source`` (``wx_source`` is 'archive'/'forecast'; dates without weather get 'none').
-    Adds ``open_last_year`` (open on the same weekday a year earlier), ``days_ahead`` and ``wx_source``.
+    Adds ``open_last_year`` (open on the same weekday a year earlier), ``hours_estimated`` (no schedule recorded on that
+    day, so the hours are a weekday/park median), ``days_ahead`` and ``wx_source``.
     """
     lab = labelled if asof is None else labelled[labelled["date"] <= pd.Timestamp(asof)]
     last = lab["date"].max()
