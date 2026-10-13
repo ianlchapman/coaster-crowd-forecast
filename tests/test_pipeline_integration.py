@@ -64,6 +64,45 @@ def test_forecast_from_files_with_a_faked_weather_api(data_dir, monkeypatch, fas
     assert out["prediction"].between(0, 100).all()
     assert set(out["weather"]) <= {"archive", "forecast", "none"}
     assert out.loc[~out["is_open"], ["opens", "closes"]].isna().all().all()
+    assert out["hours_estimated"].all()  # synthetic calendar has no rows past the last label
+
+
+def test_forecast_uses_the_scraped_calendars_schedule_where_it_has_one(data_dir, monkeypatch, fast_config):
+    paths, s = data_dir
+    pipeline.make_enhanced_calendar(paths)
+    frame = pipeline.load_training_frame(paths)
+    model = GatedCrowdModel(fast_config).fit(frame, "2021-12-31")
+    status_frame = build_status_frame(
+        load_crowd_calendar(paths.crowd_calendar),
+        park_table(load_parks(paths.parks_csv), pd.read_csv(paths.parks_enriched)),
+        DailyScores.load(paths.daily_scores),
+    )
+    status_model = StatusModel(fast_config).fit(status_frame, "2021-12-31")
+    fake = s.weather[s.weather["date"].isin(pd.date_range("2022-11-01", "2023-01-05"))]
+    monkeypatch.setattr(pipeline, "fetch_forecast", lambda coords, cache, refresh=False: fake)
+
+    raw = pd.read_csv(paths.crowd_calendar)
+    park = int(raw["park_id"].iloc[0])
+    day_open, day_closed = "2023-01-03", "2023-01-04"  # synthetic history ends 2022-12-31
+    extra = pd.DataFrame(
+        [
+            [park, day_open, "open", "", False, "07:45", "23:15", ""],
+            [park, day_closed, "closed", "", False, "", "", ""],
+        ],
+        columns=raw.columns,
+    )
+    original = paths.crowd_calendar.read_text()  # session-scoped fixture: put the file back afterwards
+    pd.concat([raw, extra], ignore_index=True).to_csv(paths.crowd_calendar, index=False)
+    try:
+        out = pipeline.forecast(paths, model, status_model, end="2023-01-05").set_index(["park_id", "date"])
+    finally:
+        paths.crowd_calendar.write_text(original)
+    opened = out.loc[(park, pd.Timestamp(day_open))]
+    assert opened["is_open"] and (opened["opens"], opened["closes"]) == ("07:45", "23:15")
+    assert not opened["hours_estimated"]
+    closed = out.loc[(park, pd.Timestamp(day_closed))]
+    assert not closed["is_open"] and not closed["hours_estimated"] and pd.isna(closed["opens"])
+    assert out["hours_estimated"].sum() == len(out) - 2
 
 
 def test_park_missing_from_scores_is_skipped_by_enhance_and_status_frame(data_dir):

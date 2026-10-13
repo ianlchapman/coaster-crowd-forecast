@@ -44,3 +44,34 @@ def test_minutes_to_hhmm_round_trips_and_blanks_missing():
     out = minutes_to_hhmm(minutes)
     assert out.tolist()[:3] == ["00:00", "01:30", "10:00"]
     assert pd.isna(out.iloc[3])
+
+
+def _calendar_with_hours(rows: list[tuple[int, str, str, str | None, str | None]]) -> pd.DataFrame:
+    """rows of (park_id, date, status, opens, closes)."""
+    df = pd.DataFrame(rows, columns=["park_id", "date", "status", "opens", "closes"])
+    df["date"] = pd.to_datetime(df["date"])
+    return df
+
+
+def test_known_schedule_uses_calendar_hours_and_closures_only_when_complete():
+    from crowdcast.features.status import known_schedule
+
+    cal = _calendar_with_hours(
+        [
+            (1, "2024-06-01", "open", "09:30", "18:00"),
+            (1, "2024-06-02", "closed", None, None),
+            (1, "2024-06-03", "open", None, None),  # open but no hours: not enough to settle the day
+            (1, "2024-06-04", "unknown", None, None),
+        ]
+    )
+    rows = pd.DataFrame(
+        {
+            "park_id": [1] * 5,
+            "date": pd.to_datetime(["2024-06-01", "2024-06-02", "2024-06-03", "2024-06-04", "2024-06-05"]),
+        }
+    )
+    out = known_schedule(rows, cal)
+    assert out["known"].tolist() == [True, True, False, False, False]  # last: no calendar row at all
+    assert out["is_open"].tolist()[:2] == [True, False]
+    assert out.loc[0, "open_min"] == 9 * 60 + 30 and out.loc[0, "close_min"] == 18 * 60
+    assert out[["open_min", "close_min"]].iloc[1:].isna().all().all()
