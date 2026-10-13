@@ -52,6 +52,31 @@ def add_is_open_prior_year(rows: pd.DataFrame, status_calendar: pd.DataFrame, la
     return rows
 
 
+def known_schedule(rows: pd.DataFrame, calendar: pd.DataFrame) -> pd.DataFrame:
+    """The schedule the scraped calendar already shows for each ``rows`` park-day (same index as ``rows``).
+
+    Columns: ``known`` (the calendar settles this day), ``is_open``, ``open_min``, ``close_min``.
+    A day is known when the calendar lists it as ``closed``, or as ``open`` with both an opening and a closing time.
+    Anything else (no row, ``unknown``/``no_data``, open without hours) is not known and is left to the model.
+    """
+    cal = calendar.set_index(["park_id", "date"])[["status", "opens", "closes"]].reindex(
+        pd.MultiIndex.from_arrays([rows["park_id"], rows["date"]])
+    )
+    opens = pd.to_datetime(cal["opens"], format="%H:%M", errors="coerce")
+    closes = pd.to_datetime(cal["closes"], format="%H:%M", errors="coerce")
+    open_with_hours = cal["status"].eq("open") & opens.notna() & closes.notna()
+    closed = cal["status"].eq("closed")
+    return pd.DataFrame(
+        {
+            "known": (open_with_hours | closed).to_numpy(),
+            "is_open": open_with_hours.to_numpy(),
+            "open_min": (opens.dt.hour * 60 + opens.dt.minute).to_numpy(),
+            "close_min": (closes.dt.hour * 60 + closes.dt.minute).to_numpy(),
+        },
+        index=rows.index,
+    )
+
+
 def minutes_to_hhmm(minutes: pd.Series) -> pd.Series:
     """Minute-of-day -> ``"HH:MM"`` string, ``pd.NA`` where ``minutes`` is NaN."""
     m = minutes.round().astype("Int64") % (24 * 60)
