@@ -91,17 +91,28 @@ def test_forecast_uses_the_scraped_calendars_schedule_where_it_has_one(data_dir,
         ],
         columns=raw.columns,
     )
+    seen = {}
+    real_predict = model.predict
+
+    def spy(rows, **kw):
+        seen["rows"] = rows.set_index(["park_id", "date"])
+        return real_predict(rows, **kw)
+
+    monkeypatch.setattr(model, "predict", spy)
     original = paths.crowd_calendar.read_text()  # session-scoped fixture: put the file back afterwards
     pd.concat([raw, extra], ignore_index=True).to_csv(paths.crowd_calendar, index=False)
     try:
         out = pipeline.forecast(paths, model, status_model, end="2023-01-05").set_index(["park_id", "date"])
     finally:
         paths.crowd_calendar.write_text(original)
+    fed = seen["rows"].loc[(park, pd.Timestamp(day_open))]
+    assert (fed["open_min"], fed["close_min"], fed["open_hours"]) == (7 * 60 + 45, 23 * 60 + 15, 15.5)
     opened = out.loc[(park, pd.Timestamp(day_open))]
     assert opened["is_open"] and (opened["opens"], opened["closes"]) == ("07:45", "23:15")
     assert not opened["hours_estimated"]
     closed = out.loc[(park, pd.Timestamp(day_closed))]
     assert not closed["is_open"] and not closed["hours_estimated"] and pd.isna(closed["opens"])
+    assert pd.isna(closed["prediction"]) and out.drop(index=closed.name)["prediction"].notna().all()
     assert out["hours_estimated"].sum() == len(out) - 2
 
 

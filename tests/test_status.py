@@ -75,3 +75,23 @@ def test_known_schedule_uses_calendar_hours_and_closures_only_when_complete():
     assert out["is_open"].tolist()[:2] == [True, False]
     assert out.loc[0, "open_min"] == 9 * 60 + 30 and out.loc[0, "close_min"] == 18 * 60
     assert out[["open_min", "close_min"]].iloc[1:].isna().all().all()
+
+
+def test_apply_known_hours_only_touches_known_open_days():
+    from crowdcast.features.status import apply_known_hours
+
+    rows = pd.DataFrame(
+        {"open_min": [600.0, 600.0, 600.0], "close_min": [1080.0, 1080.0, 1080.0], "open_hours": [8.0, 8.0, 8.0]}
+    )
+    known = pd.DataFrame(
+        {
+            "known": [True, True, False],
+            "is_open": [True, False, False],
+            "open_min": [480.0, float("nan"), float("nan")],
+            "close_min": [60.0, float("nan"), float("nan")],  # closes 01:00, after midnight
+        }
+    )
+    out = apply_known_hours(rows, known)
+    assert out.loc[0, ["open_min", "close_min", "open_hours"]].tolist() == [480.0, 60.0, 17.0]
+    assert out.loc[1:, ["open_min", "close_min", "open_hours"]].eq(rows.loc[1:]).all().all()
+    assert rows.loc[0, "open_min"] == 600.0  # input not mutated
