@@ -10,7 +10,7 @@ from crowdcast.config import Paths
 from crowdcast.data.loaders import load_crowd_calendar, load_parks
 from crowdcast.features.build import build_feature_frame, park_table
 from crowdcast.features.future import build_future_rows
-from crowdcast.features.status import add_is_open_prior_year, known_schedule, minutes_to_hhmm
+from crowdcast.features.status import add_is_open_prior_year, apply_known_hours, known_schedule, minutes_to_hhmm
 from crowdcast.models.gated import GatedCrowdModel
 from crowdcast.models.status import StatusModel
 from crowdcast.scoring.daily import DailyScores
@@ -55,7 +55,9 @@ def forecast(
     fields in most/all backtest years -- a blend of the two approaches, not a full replacement.
 
     Where the scraped calendar already shows a day's schedule (closed, or open with hours) that schedule wins over
-    the model and ``hours_estimated`` is False; every other day is predicted and ``hours_estimated`` is True.
+    the model and ``hours_estimated`` is False; every other day is predicted and ``hours_estimated`` is True. Those
+    scraped hours also replace the last-year guess as the crowd model's hours inputs, and a day the calendar lists as
+    closed has no crowd ``prediction``.
     """
     labelled = load_training_frame(paths)
     end = end or str((pd.Timestamp.today().normalize() + pd.Timedelta(days=15)).date())
@@ -75,10 +77,12 @@ def forecast(
     known = known_schedule(rows, calendar)
     predicted_open = pd.Series(status_model.predict_is_open(rows), index=rows.index)
     is_open = predicted_open.where(~known["known"], known["is_open"]).astype(bool)
-    open_min = rows["open_min"].where(~known["known"], known["open_min"])
-    close_min = rows["close_min"].where(~known["known"], known["close_min"])
+    rows = apply_known_hours(rows, known)  # the crowd model sees real hours wherever the calendar has them
+    open_min, close_min = rows["open_min"], rows["close_min"]
 
     pred = model.predict(rows, lag=1)  # lag=1 keeps every drift column; those without labels are already blank
+    known_closed = (known["known"] & ~known["is_open"]).to_numpy()
+    pred["prediction"] = pred["prediction"].where(~known_closed)  # a day the park is closed has no crowd level
     pred = pred.assign(
         is_open=is_open.to_numpy(),
         opens=minutes_to_hhmm(open_min).where(is_open).to_numpy(),

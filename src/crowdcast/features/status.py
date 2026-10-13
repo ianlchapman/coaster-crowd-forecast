@@ -77,6 +77,23 @@ def known_schedule(rows: pd.DataFrame, calendar: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def apply_known_hours(rows: pd.DataFrame, known: pd.DataFrame) -> pd.DataFrame:
+    """Give the crowd model the scraped hours for days the calendar already settles as open.
+
+    ``build_future_rows`` fills ``open_min``/``close_min``/``open_hours`` with last year's value (or a median), which is
+    all that is known for most future days. Where the calendar has the real schedule, the model should see that instead
+    -- it is trained on each day's actual recorded hours.
+    """
+    sched = (known["known"] & known["is_open"]).to_numpy()
+    rows = rows.copy()
+    rows.loc[sched, "open_min"] = known.loc[sched, "open_min"].to_numpy()
+    rows.loc[sched, "close_min"] = known.loc[sched, "close_min"].to_numpy()
+    hours = (rows["close_min"] - rows["open_min"]) / 60
+    hours = hours.where(hours >= 0, hours + 24)  # closes after midnight
+    rows.loc[sched, "open_hours"] = hours[sched]
+    return rows
+
+
 def minutes_to_hhmm(minutes: pd.Series) -> pd.Series:
     """Minute-of-day -> ``"HH:MM"`` string, ``pd.NA`` where ``minutes`` is NaN."""
     m = minutes.round().astype("Int64") % (24 * 60)
