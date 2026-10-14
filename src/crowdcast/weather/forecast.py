@@ -16,10 +16,26 @@ FORECAST_DAYS = 16
 CACHE_HOURS = 3
 
 
+def _cached(cache_file: Path) -> dict | None:
+    """The cached payload if it is recent *and* reaches the end of the forecast horizon, else ``None``.
+
+    File mtime alone is not trusted: a ``git checkout`` stamps every file with the checkout time, so a committed cache
+    always looks new. Coverage of the horizon (today + 15, less a day for time zones west of UTC) cannot be faked.
+    """
+    if not cache_file.exists() or (time.time() - cache_file.stat().st_mtime) >= CACHE_HOURS * 3600:
+        return None
+    try:
+        data = json.loads(cache_file.read_text())
+        last = pd.Timestamp(data["daily"]["time"][-1])
+    except (ValueError, KeyError, IndexError):
+        return None
+    horizon = pd.Timestamp.now("UTC").tz_localize(None).normalize() + pd.Timedelta(days=FORECAST_DAYS - 2)
+    return data if last >= horizon else None
+
+
 def _fetch_cell(client: OpenMeteoClient, lat: float, lon: float, cache_file: Path, refresh: bool) -> dict:
-    fresh = cache_file.exists() and (time.time() - cache_file.stat().st_mtime) < CACHE_HOURS * 3600
-    if fresh and not refresh:
-        return json.loads(cache_file.read_text())
+    if not refresh and (data := _cached(cache_file)) is not None:
+        return data
     params = {
         "latitude": f"{lat:.4f}",
         "longitude": f"{lon:.4f}",
