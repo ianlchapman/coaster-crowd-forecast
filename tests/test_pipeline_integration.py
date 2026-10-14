@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from crowdcast import pipeline
 from crowdcast.data.loaders import load_crowd_calendar, load_parks
@@ -65,6 +66,16 @@ def test_forecast_from_files_with_a_faked_weather_api(data_dir, monkeypatch, fas
     assert set(out["weather"]) <= {"archive", "forecast", "none"}
     assert out.loc[~out["is_open"], ["opens", "closes"]].isna().all().all()
     assert out["hours_estimated"].all()  # synthetic calendar has no rows past the last label
+
+
+def test_missing_weather_inside_the_horizon_is_an_error_but_beyond_it_is_fine():
+    today = pd.Timestamp("2026-10-14")
+    rows = pd.DataFrame({"date": pd.date_range(today, periods=40), "wx_source": "none"})
+    with pytest.raises(RuntimeError, match="no weather"):
+        pipeline.require_horizon_weather(rows, today)
+    rows.loc[3, "wx_source"] = "forecast"
+    pipeline.require_horizon_weather(rows, today)
+    pipeline.require_horizon_weather(rows.assign(wx_source="none").iloc[20:], today)  # only beyond the horizon
 
 
 def test_forecast_uses_the_scraped_calendars_schedule_where_it_has_one(data_dir, monkeypatch, fast_config):

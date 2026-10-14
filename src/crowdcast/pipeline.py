@@ -41,6 +41,14 @@ def load_training_frame(paths: Paths) -> pd.DataFrame:
     return build_feature_frame(enhanced, load_parks_table(paths), weather)
 
 
+def require_horizon_weather(rows: pd.DataFrame, today: pd.Timestamp | None = None) -> None:
+    """Raise if rows inside the weather forecast horizon exist but none has weather (a stale or empty cache)."""
+    today = today or pd.Timestamp.today().normalize()
+    horizon = rows[(rows["date"] >= today) & (rows["date"] < today + pd.Timedelta(days=15))]
+    if len(horizon) and (horizon["wx_source"] == "none").all():
+        raise RuntimeError("no weather for any day inside the forecast horizon; the forecast cache is stale or empty")
+
+
 def forecast(
     paths: Paths,
     model: GatedCrowdModel,
@@ -72,6 +80,7 @@ def forecast(
     weather = features.merge(combined[["park_id", "date", "wx_source"]], on=["park_id", "date"], how="left")
 
     rows = build_future_rows(labelled, DailyScores.load(paths.daily_scores), weather, end)
+    require_horizon_weather(rows)
     calendar = load_crowd_calendar(paths.crowd_calendar)
     rows = add_is_open_prior_year(rows, calendar[["park_id", "date", "status"]], labelled["date"].max())
     known = known_schedule(rows, calendar)

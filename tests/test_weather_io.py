@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -73,6 +75,21 @@ def test_forecast_covers_past_and_future_and_is_cached(tmp_path):
     assert len(client.calls) == 2  # served from the 3-hour cache
     fetch_forecast(PARKS, tmp_path, client=client, refresh=True)
     assert len(client.calls) == 4
+
+
+def test_stale_cache_with_a_fresh_mtime_is_refetched(tmp_path):
+    """A committed cache gets a new mtime on checkout; it must still be refetched if it ends before the horizon."""
+    client = FakeClient()
+    fetch_forecast(PARKS, tmp_path, client=client)
+    assert len(client.calls) == 2
+    for f in tmp_path.glob("fc_*.json"):
+        data = json.loads(f.read_text())
+        keep = len(data["daily"]["time"]) - 10  # ends 10 days short of the horizon, file itself is brand new
+        data["daily"] = {k: v[:keep] for k, v in data["daily"].items()}
+        f.write_text(json.dumps(data))
+    fc = fetch_forecast(PARKS, tmp_path, client=client)
+    assert len(client.calls) == 4
+    assert fc["date"].max() == pd.Timestamp.today().normalize() + pd.Timedelta(days=15)
 
 
 def test_archive_wins_over_forecast_where_both_exist():
