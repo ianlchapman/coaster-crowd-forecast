@@ -1,4 +1,5 @@
 import json
+import os
 
 import numpy as np
 import pandas as pd
@@ -7,6 +8,7 @@ import pytest
 from crowdcast.weather.archive import fetch_archive, load_archive
 from crowdcast.weather.client import DAILY_VARIABLES
 from crowdcast.weather.forecast import combine_archive_and_forecast, fetch_forecast
+from crowdcast.weather.grid import add_cell
 from crowdcast.weather.previous_runs import HOURLY_VARIABLES, fetch_previous_runs
 
 
@@ -90,6 +92,26 @@ def test_stale_cache_with_a_fresh_mtime_is_refetched(tmp_path):
     fc = fetch_forecast(PARKS, tmp_path, client=client)
     assert len(client.calls) == 4
     assert fc["date"].max() == pd.Timestamp.today().normalize() + pd.Timedelta(days=15)
+
+
+class _DownClient(FakeClient):
+    def get_json(self, url: str, params: dict) -> dict:
+        raise RuntimeError("gave up after 6 network failures")
+
+
+def test_failed_forecast_fetch_falls_back_to_stale_cache_or_skips_the_cell(tmp_path):
+    fetch_forecast(PARKS, tmp_path, client=FakeClient())
+    cells = add_cell(PARKS).set_index("park_id")["cell"]
+    (tmp_path / f"fc_{cells[3]}.json").unlink()  # park 3's cell has no cache at all
+    for f in tmp_path.glob("fc_*.json"):
+        os.utime(f, (0, 0))  # parks 1 and 2 share a cell whose cache is long stale
+    fc = fetch_forecast(PARKS, tmp_path, client=_DownClient())
+    assert sorted(fc["park_id"].unique()) == [1, 2]
+
+
+def test_all_forecast_fetches_failing_raises(tmp_path):
+    with pytest.raises(RuntimeError, match="no forecast weather"):
+        fetch_forecast(PARKS, tmp_path, client=_DownClient())
 
 
 def test_archive_wins_over_forecast_where_both_exist():
