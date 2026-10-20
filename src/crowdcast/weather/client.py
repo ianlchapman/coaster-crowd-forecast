@@ -2,7 +2,8 @@
 
 Free-tier limits are 600 calls/minute, 5,000/hour and 10,000/day, weighted by variables x days. An hourly-limit response
 (HTTP 429) is waited out; a daily-limit response raises :class:`DailyLimitError` because retrying today cannot succeed.
-Transport (``opener``) and sleeping (``sleep``) are injectable so the retry logic is unit-testable without a network.
+Transport failures (timeouts, TLS handshakes, resets) are retried only ``max_network_failures`` times in a row, so a
+bad route fails in minutes instead of spinning for hours. Transport (``opener``) and sleeping (``sleep``) are injectable so the retry logic is unit-testable without a network.
 """
 
 from __future__ import annotations
@@ -41,15 +42,18 @@ class OpenMeteoClient:
         opener: Callable[..., Any] = urllib.request.urlopen,
         sleep: Callable[[float], None] = time.sleep,
         max_attempts: int = 40,
-        timeout: float = 120.0,
+        timeout: float = 30.0,
+        max_network_failures: int = 6,
     ) -> None:
         self._open = opener
         self._sleep = sleep
         self.max_attempts = max_attempts
         self.timeout = timeout
+        self.max_network_failures = max_network_failures
 
     def get_json(self, url: str, params: dict[str, Any]) -> dict[str, Any]:
         full = url + "?" + urllib.parse.urlencode(params)
+        network_failures = 0
         for attempt in range(1, self.max_attempts + 1):
             try:
                 with self._open(full, timeout=self.timeout) as resp:
@@ -71,5 +75,8 @@ class OpenMeteoClient:
                 ValueError,
             ) as err:  # ValueError: empty/invalid JSON (throttling)
                 log.warning("request failed (%s: %s), retrying", type(err).__name__, err)
-                self._sleep(min(30 * attempt, 180))
+                network_failures += 1
+                if network_failures >= self.max_network_failures:
+                    raise RuntimeError(f"gave up after {network_failures} network failures: {full}") from err
+                self._sleep(min(10 * network_failures, 60))
         raise RuntimeError(f"gave up after {self.max_attempts} attempts: {full}")

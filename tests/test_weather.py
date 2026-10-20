@@ -77,6 +77,21 @@ def test_gives_up_after_max_attempts():
         client.get_json("http://x", {})
 
 
+def test_network_failures_give_up_fast_instead_of_retrying_for_hours():
+    err = urllib.error.URLError("_ssl.c:993: The handshake operation timed out")
+    client, calls, sleeps = _client([err] * 5)
+    client.max_network_failures = 3  # fewer than max_attempts, which still allows 5
+    with pytest.raises(RuntimeError, match="network failures"):
+        client.get_json("http://x", {})
+    assert len(calls) == 3 and sleeps == [10, 20]
+
+
+def test_network_failure_then_success_recovers():
+    client, calls, _ = _client([urllib.error.URLError("handshake timed out"), {"ok": 3}])
+    assert client.get_json("http://x", {}) == {"ok": 3}
+    assert len(calls) == 2
+
+
 def test_grid_cell_shared_by_nearby_parks():
     parks = pd.DataFrame({"park_id": [1, 2, 3], "latitude": [48.80, 48.85, 40.0], "longitude": [2.77, 2.80, -74.0]})
     cells = add_cell(parks)["cell"]

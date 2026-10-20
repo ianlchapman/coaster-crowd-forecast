@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from pathlib import Path
 
@@ -10,6 +11,8 @@ import pandas as pd
 
 from crowdcast.weather.client import DAILY_VARIABLES, FORECAST_URL, OpenMeteoClient
 from crowdcast.weather.grid import add_cell
+
+log = logging.getLogger(__name__)
 
 PAST_DAYS = 92  # the API's maximum look-back; covers the gap between the archive's end and today
 FORECAST_DAYS = 16
@@ -57,12 +60,20 @@ def fetch_forecast(
     client = client or OpenMeteoClient()
     frames: list[pd.DataFrame] = []
     for cell, grp in add_cell(parks).groupby("cell"):
-        data = _fetch_cell(
-            client, grp["latitude"].mean(), grp["longitude"].mean(), cache_dir / f"fc_{cell}.json", refresh
-        )
+        cache_file = cache_dir / f"fc_{cell}.json"
+        try:
+            data = _fetch_cell(client, grp["latitude"].mean(), grp["longitude"].mean(), cache_file, refresh)
+        except RuntimeError as err:  # network gave up or daily quota hit: use the stale cache, else forecast without
+            if not cache_file.exists():
+                log.warning("no forecast weather for cell %s (%s); its parks are forecast without it", cell, err)
+                continue
+            log.warning("forecast fetch for cell %s failed (%s); using the stale cache", cell, err)
+            data = json.loads(cache_file.read_text())
         daily = pd.DataFrame(data["daily"]).rename(columns={"time": "date"})
         daily["date"] = pd.to_datetime(daily["date"])
         frames.extend(daily.assign(park_id=pid) for pid in grp["park_id"])
+    if not frames:
+        raise RuntimeError("no forecast weather could be fetched for any park")
     return pd.concat(frames, ignore_index=True)
 
 
